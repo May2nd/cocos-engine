@@ -29,7 +29,6 @@
  */
 // clang-format off
 #pragma once
-#include "cocos/base/std/hash/hash.h"
 #include "cocos/base/std/variant.h"
 #include "cocos/renderer/gfx-base/GFXDef-common.h"
 
@@ -44,6 +43,7 @@ struct RasterPassTag;
 struct RasterSubpassTag;
 struct ComputeSubpassTag;
 struct ComputeTag;
+struct ResolveTag;
 struct CopyTag;
 struct MoveTag;
 struct RaytraceTag;
@@ -61,12 +61,8 @@ enum class SceneFlags : uint32_t;
 enum class LightingMode : uint32_t;
 enum class AttachmentType;
 enum class AccessType;
-
-struct RasterView;
-
 enum class ClearValueType;
 
-struct ComputeView;
 struct LightInfo;
 
 enum class DescriptorTypeOrder;
@@ -75,26 +71,17 @@ struct Descriptor;
 struct DescriptorBlock;
 struct DescriptorBlockFlattened;
 struct DescriptorBlockIndex;
+
+enum class ResolveFlags : uint32_t;
+
+struct ResolvePair;
 struct CopyPair;
+struct UploadPair;
 struct MovePair;
 struct PipelineStatistics;
 
 } // namespace render
 
 } // namespace cc
-
-namespace ccstd {
-
-template <>
-struct hash<cc::render::RasterView> {
-    hash_t operator()(const cc::render::RasterView& val) const noexcept;
-};
-
-template <>
-struct hash<cc::render::ComputeView> {
-    hash_t operator()(const cc::render::ComputeView& val) const noexcept;
-};
-
-} // namespace ccstd
 
 // clang-format on

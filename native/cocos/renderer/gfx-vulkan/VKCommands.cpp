@@ -120,7 +120,7 @@ void cmdFuncCCVKCreateTexture(CCVKDevice *device, CCVKGPUTexture *gpuTexture) {
 
     gpuTexture->aspectMask = mapVkImageAspectFlags(gpuTexture->format);
     // storage images has to be in general layout
-    if (hasFlag(gpuTexture->usage, TextureUsageBit::STORAGE)) gpuTexture->flags |= TextureFlagBit::GENERAL_LAYOUT;
+    // if (hasFlag(gpuTexture->usage, TextureUsageBit::STORAGE)) gpuTexture->flags |= TextureFlagBit::GENERAL_LAYOUT;
     // remove stencil aspect for depth textures with sampled usage
     if (hasFlag(gpuTexture->usage, TextureUsageBit::SAMPLED)) gpuTexture->aspectMask &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
 
@@ -191,8 +191,7 @@ void cmdFuncCCVKCreateTexture(CCVKDevice *device, CCVKGPUTexture *gpuTexture) {
             }
         }
         gpuTexture->memoryless = true;
-    } else if (hasFlag(gpuTexture->flags, TextureFlagBit::EXTERNAL_OES)
-        || hasFlag(gpuTexture->flags, TextureFlagBit::EXTERNAL_NORMAL)) {
+    } else if (hasFlag(gpuTexture->flags, TextureFlagBit::EXTERNAL_OES) || hasFlag(gpuTexture->flags, TextureFlagBit::EXTERNAL_NORMAL)) {
         gpuTexture->vkImage = gpuTexture->externalVKImage;
     } else {
         createFn(&gpuTexture->vkImage, &gpuTexture->vmaAllocation);
@@ -351,6 +350,27 @@ private:
     ccstd::unordered_set<VkSubpassDependency2, DependencyHasher, DependencyComparer> _hashes;
 };
 
+std::pair<VkImageLayout, VkImageLayout> getInitialFinalLayout(CCVKDevice *device, CCVKGeneralBarrier *barrier, bool depthSetncil) {
+    const auto *gpuBarrier = barrier ? barrier->gpuBarrier() :
+        (depthSetncil ? &device->gpuDevice()->defaultDepthStencilBarrier : &device->gpuDevice()->defaultColorBarrier);
+
+    ThsvsImageBarrier imageBarrier = {};
+    imageBarrier.prevAccessCount = utils::toUint(gpuBarrier->prevAccesses.size());
+    imageBarrier.pPrevAccesses = gpuBarrier->prevAccesses.data();
+    imageBarrier.nextAccessCount = utils::toUint(gpuBarrier->nextAccesses.size());
+    imageBarrier.pNextAccesses = gpuBarrier->nextAccesses.data();
+    imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imageBarrier.prevLayout = barrier ? getAccessLayout(barrier->getInfo().prevAccesses) : THSVS_IMAGE_LAYOUT_OPTIMAL;
+    imageBarrier.nextLayout = barrier ? getAccessLayout(barrier->getInfo().nextAccesses) : THSVS_IMAGE_LAYOUT_OPTIMAL;
+
+    VkPipelineStageFlags srcStages = {};
+    VkPipelineStageFlags dstStages = {};
+    VkImageMemoryBarrier vkImageBarrier = {};
+    thsvsGetVulkanImageMemoryBarrier(imageBarrier, &srcStages, &dstStages, &vkImageBarrier);
+    return {vkImageBarrier.oldLayout, vkImageBarrier.newLayout};
+}
+
 void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRenderPass) {
     static ccstd::vector<VkSubpassDescriptionDepthStencilResolve> depthStencilResolves;
     static ccstd::vector<VkAttachmentDescription2> attachmentDescriptions;
@@ -372,14 +392,8 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
 
     for (size_t i = 0U; i < colorAttachmentCount; ++i) {
         const auto &attachment{gpuRenderPass->colorAttachments[i]};
-        auto &beginAccessInfo = beginAccessInfos[i];
-        auto &endAccessInfo = endAccessInfos[i];
-
-        const auto *gpuBarrier{gpuRenderPass->getBarrier(i, device->gpuDevice())};
-        thsvsGetAccessInfo(utils::toUint(gpuBarrier->prevAccesses.size()), gpuBarrier->prevAccesses.data(), &beginAccessInfo.stageMask,
-                           &beginAccessInfo.accessMask, &beginAccessInfo.imageLayout, &beginAccessInfo.hasWriteAccess);
-        thsvsGetAccessInfo(utils::toUint(gpuBarrier->nextAccesses.size()), gpuBarrier->nextAccesses.data(), &endAccessInfo.stageMask,
-                           &endAccessInfo.accessMask, &endAccessInfo.imageLayout, &endAccessInfo.hasWriteAccess);
+        auto [initialLayout, finalLayout] =
+            getInitialFinalLayout(device, static_cast<CCVKGeneralBarrier *>(attachment.barrier), false);
 
         VkFormat vkFormat = mapVkFormat(attachment.format, device->gpuDevice());
         bool hasStencil = GFX_FORMAT_INFOS[toNumber(attachment.format)].hasStencil;
@@ -391,19 +405,12 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
         attachmentDescriptions[i].storeOp = mapVkStoreOp(attachment.storeOp);
         attachmentDescriptions[i].stencilLoadOp = hasStencil ? attachmentDescriptions[i].loadOp : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         attachmentDescriptions[i].stencilStoreOp = hasStencil ? attachmentDescriptions[i].storeOp : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachmentDescriptions[i].initialLayout = attachment.loadOp == gfx::LoadOp::DISCARD ? VK_IMAGE_LAYOUT_UNDEFINED : beginAccessInfo.imageLayout;
-        attachmentDescriptions[i].finalLayout = endAccessInfo.imageLayout;
+        attachmentDescriptions[i].initialLayout = attachment.loadOp == gfx::LoadOp::DISCARD ? VK_IMAGE_LAYOUT_UNDEFINED : initialLayout;
+        attachmentDescriptions[i].finalLayout = finalLayout;
     }
     if (hasDepth) {
         const DepthStencilAttachment &depthStencilAttachment = gpuRenderPass->depthStencilAttachment;
-        CCVKAccessInfo &beginAccessInfo = beginAccessInfos[colorAttachmentCount];
-        CCVKAccessInfo &endAccessInfo = endAccessInfos[colorAttachmentCount];
-
-        const auto *gpuBarrier{gpuRenderPass->getBarrier(colorAttachmentCount, device->gpuDevice())};
-        thsvsGetAccessInfo(utils::toUint(gpuBarrier->prevAccesses.size()), gpuBarrier->prevAccesses.data(), &beginAccessInfo.stageMask,
-                           &beginAccessInfo.accessMask, &beginAccessInfo.imageLayout, &beginAccessInfo.hasWriteAccess);
-        thsvsGetAccessInfo(utils::toUint(gpuBarrier->nextAccesses.size()), gpuBarrier->nextAccesses.data(), &endAccessInfo.stageMask,
-                           &endAccessInfo.accessMask, &endAccessInfo.imageLayout, &endAccessInfo.hasWriteAccess);
+        auto [initialLayout, finalLayout] = getInitialFinalLayout(device, static_cast<CCVKGeneralBarrier *>(depthStencilAttachment.barrier), true);
 
         VkFormat vkFormat = mapVkFormat(depthStencilAttachment.format, device->gpuDevice());
         bool hasStencil = GFX_FORMAT_INFOS[toNumber(depthStencilAttachment.format)].hasStencil;
@@ -415,8 +422,8 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
         attachmentDescriptions[colorAttachmentCount].storeOp = mapVkStoreOp(depthStencilAttachment.depthStoreOp);
         attachmentDescriptions[colorAttachmentCount].stencilLoadOp = hasStencil ? mapVkLoadOp(depthStencilAttachment.stencilLoadOp) : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         attachmentDescriptions[colorAttachmentCount].stencilStoreOp = hasStencil ? mapVkStoreOp(depthStencilAttachment.stencilStoreOp) : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachmentDescriptions[colorAttachmentCount].initialLayout = depthStencilAttachment.depthLoadOp == gfx::LoadOp::DISCARD ? VK_IMAGE_LAYOUT_UNDEFINED : beginAccessInfo.imageLayout;
-        attachmentDescriptions[colorAttachmentCount].finalLayout = endAccessInfo.imageLayout;
+        attachmentDescriptions[colorAttachmentCount].initialLayout = depthStencilAttachment.depthLoadOp == gfx::LoadOp::DISCARD ? VK_IMAGE_LAYOUT_UNDEFINED : initialLayout;
+        attachmentDescriptions[colorAttachmentCount].finalLayout = finalLayout;
     }
 
     size_t subpassCount = gpuRenderPass->subpasses.size();
@@ -428,66 +435,62 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
 
         for (uint32_t input : subpassInfo.inputs) {
             if (input == gpuRenderPass->colorAttachments.size()) {
-                VkImageLayout layout = gpuRenderPass->depthStencilAttachment.isGeneralLayout ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                VkImageLayout layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
                 attachmentReferences.push_back({VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2, nullptr, input, layout, VK_IMAGE_ASPECT_DEPTH_BIT});
             } else {
-                VkImageLayout layout = gpuRenderPass->colorAttachments[input].isGeneralLayout ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 attachmentReferences.push_back({VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2, nullptr, input, layout, VK_IMAGE_ASPECT_COLOR_BIT});
             }
         }
         for (uint32_t color : subpassInfo.colors) {
             const ColorAttachment &desc = gpuRenderPass->colorAttachments[color];
             const VkAttachmentDescription2 &attachment = attachmentDescriptions[color];
-            VkImageLayout layout = desc.isGeneralLayout ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            bool appearsInInput = std::find(subpassInfo.inputs.begin(), subpassInfo.inputs.end(), color) != subpassInfo.inputs.end();
+            VkImageLayout layout = appearsInInput ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             attachmentReferences.push_back({VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2, nullptr, color, layout, VK_IMAGE_ASPECT_COLOR_BIT});
             sampleCount = std::max(sampleCount, attachment.samples);
         }
         for (uint32_t resolve : subpassInfo.resolves) {
-            VkImageLayout layout = gpuRenderPass->colorAttachments[resolve].isGeneralLayout ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             attachmentReferences.push_back({VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2, nullptr, resolve, layout, VK_IMAGE_ASPECT_COLOR_BIT});
         }
 
         if (subpassInfo.depthStencil != INVALID_BINDING) {
             Format dsFormat{Format::UNKNOWN};
-            bool isGeneralLayout{false};
             if (subpassInfo.depthStencil >= colorAttachmentCount) {
                 const DepthStencilAttachment &desc = gpuRenderPass->depthStencilAttachment;
                 const VkAttachmentDescription2 &attachment = attachmentDescriptions.back();
-                isGeneralLayout = desc.isGeneralLayout;
                 dsFormat = desc.format;
                 sampleCount = std::max(sampleCount, attachment.samples);
             } else {
                 const ColorAttachment &desc = gpuRenderPass->colorAttachments[subpassInfo.depthStencil];
                 const VkAttachmentDescription2 &attachment = attachmentDescriptions[subpassInfo.depthStencil];
-                isGeneralLayout = desc.isGeneralLayout;
                 dsFormat = desc.format;
                 sampleCount = std::max(sampleCount, attachment.samples);
             }
 
+            bool appearsInInput = std::find(subpassInfo.inputs.begin(), subpassInfo.inputs.end(), subpassInfo.depthStencil) != subpassInfo.inputs.end();
             VkImageAspectFlags aspect = GFX_FORMAT_INFOS[toNumber(dsFormat)].hasStencil
                                             ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
                                             : VK_IMAGE_ASPECT_DEPTH_BIT;
-            VkImageLayout layout = isGeneralLayout ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            VkImageLayout layout = appearsInInput ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             attachmentReferences.push_back({VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2, nullptr, subpassInfo.depthStencil, layout, aspect});
         }
 
         if (subpassInfo.depthStencilResolve != INVALID_BINDING) {
             Format dsFormat{Format::UNKNOWN};
-            bool isGeneralLayout{false};
             if (subpassInfo.depthStencilResolve >= colorAttachmentCount) {
                 const DepthStencilAttachment &desc = gpuRenderPass->depthStencilAttachment;
-                isGeneralLayout = desc.isGeneralLayout;
                 dsFormat = desc.format;
             } else {
                 const ColorAttachment &desc = gpuRenderPass->colorAttachments[subpassInfo.depthStencilResolve];
-                isGeneralLayout = desc.isGeneralLayout;
                 dsFormat = desc.format;
             }
 
             VkImageAspectFlags aspect = GFX_FORMAT_INFOS[toNumber(dsFormat)].hasStencil
                                             ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
                                             : VK_IMAGE_ASPECT_DEPTH_BIT;
-            VkImageLayout layout = isGeneralLayout ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            VkImageLayout layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             attachmentReferences.push_back({VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2, nullptr, subpassInfo.depthStencilResolve, layout, aspect});
         }
 
@@ -507,7 +510,7 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
     depthStencilResolves.resize(subpassCount, {VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE});
     const VkPhysicalDeviceDepthStencilResolveProperties &prop{device->gpuContext()->physicalDeviceDepthStencilResolveProperties};
     for (uint32_t i = 0U; i < gpuRenderPass->subpasses.size(); ++i) {
-        const SubpassInfo subpassInfo = gpuRenderPass->subpasses[i];
+        const SubpassInfo& subpassInfo = gpuRenderPass->subpasses[i];
 
         VkSubpassDescription2 &desc = subpassDescriptions[i];
         desc.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -583,6 +586,7 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
         // offset = 0U;
         ccstd::unordered_set<const GFXObject *> subpassExternalFilter;
 
+        gpuRenderPass->hasSelfDependency.resize(subpassCount, false);
         for (uint32_t i = 0U; i < dependencyCount; ++i) {
             const auto &dependency{gpuRenderPass->dependencies[i]};
             VkSubpassDependency2 vkDependency{VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2};
@@ -590,53 +594,37 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
             vkDependency.dstSubpass = dependency.dstSubpass;
             vkDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-            auto addStageAccessMask = [&vkDependency](const auto *barrier) {
-                VkPipelineStageFlags srcStageMask;
-                VkAccessFlags srcAccessMask;
-                VkPipelineStageFlags dstStageMask;
-                VkAccessFlags dstAccessMask;
-                VkImageLayout imageLayout{VK_IMAGE_LAYOUT_UNDEFINED};
-                bool hasWriteAccess{false};
-                const auto *gpuBarrier{barrier->gpuBarrier()};
-                thsvsGetAccessInfo(
-                    utils::toUint(gpuBarrier->prevAccesses.size()),
-                    gpuBarrier->prevAccesses.data(),
-                    &srcStageMask,
-                    &srcAccessMask,
-                    &imageLayout, &hasWriteAccess);
+            if (dependency.srcSubpass == dependency.dstSubpass && dependency.srcSubpass < subpassCount) {
+                gpuRenderPass->hasSelfDependency[dependency.srcSubpass] = true;
+            }
 
-                // offset += gpuBarrier->prevAccesses.size();
+            auto addStageAccessMask = [&vkDependency](const SubpassDependency& deps) {
+                ccstd::vector<ThsvsAccessType> prevAccesses;
+                ccstd::vector<ThsvsAccessType> nextAccesses;
+                getAccessTypes(deps.prevAccesses, prevAccesses);
+                getAccessTypes(deps.nextAccesses, nextAccesses);
 
-                thsvsGetAccessInfo(
-                    utils::toUint(gpuBarrier->nextAccesses.size()),
-                    gpuBarrier->nextAccesses.data(),
-                    &dstStageMask,
-                    &dstAccessMask,
-                    &imageLayout, &hasWriteAccess);
+                ThsvsImageBarrier imageBarrier = {};
+                imageBarrier.prevAccessCount = utils::toUint(prevAccesses.size());
+                imageBarrier.pPrevAccesses = prevAccesses.data();
+                imageBarrier.nextAccessCount = utils::toUint(nextAccesses.size());
+                imageBarrier.pNextAccesses = nextAccesses.data();
+                imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                imageBarrier.prevLayout = getAccessLayout(deps.prevAccesses);
+                imageBarrier.nextLayout = getAccessLayout(deps.nextAccesses);
 
-                // offset += gpuBarrier->nextAccesses.size();
-                vkDependency.srcStageMask |= srcStageMask;
-                vkDependency.srcAccessMask |= srcAccessMask;
-                vkDependency.dstStageMask |= dstStageMask;
-                vkDependency.dstAccessMask |= dstAccessMask;
+                VkImageMemoryBarrier vkImageBarrier = {};
+                thsvsGetVulkanImageMemoryBarrier(imageBarrier, &vkDependency.srcStageMask, &vkDependency.dstStageMask, &vkImageBarrier);
+
+                vkDependency.srcAccessMask = vkImageBarrier.srcAccessMask;
+                vkDependency.dstAccessMask = vkImageBarrier.dstAccessMask;
                 dependencyManager.append(vkDependency);
             };
-
-            if (dependency.generalBarrier) {
-                addStageAccessMask(static_cast<CCVKGeneralBarrier *>(dependency.generalBarrier));
+            if (vkDependency.srcStageMask == 0) {
+                vkDependency.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             }
-
-            if (dependency.textureBarriers) {
-                for (size_t index = 0; index < dependency.textureBarrierCount; ++index) {
-                    addStageAccessMask(static_cast<CCVKTextureBarrier *>(dependency.textureBarriers[index]));
-                }
-            }
-
-            if (dependency.bufferBarriers) {
-                for (size_t index = 0; index < dependency.bufferBarrierCount; ++index) {
-                    addStageAccessMask(static_cast<CCVKBufferBarrier *>(dependency.bufferBarriers[index]));
-                }
-            }
+            addStageAccessMask(dependency);
         }
 
     } else {
@@ -1266,7 +1254,7 @@ void cmdFuncCCVKUpdateBuffer(CCVKDevice *device, CCVKGPUBuffer *gpuBuffer, const
     }
 
     // upload buffer by chunks
-    uint32_t chunkSize = std::min(sizeToUpload, CCVKGPUStagingBufferPool::CHUNK_SIZE);
+    uint32_t chunkSize = std::min(static_cast<VkDeviceSize>(sizeToUpload), CCVKGPUStagingBufferPool::CHUNK_SIZE);
 
     uint32_t chunkOffset = 0U;
     while (sizeToUpload) {
@@ -1598,10 +1586,9 @@ const CCVKGPUGeneralBarrier *CCVKGPURenderPass::getBarrier(size_t index, CCVKGPU
     return depthStencilAttachment.barrier ? static_cast<CCVKGeneralBarrier *>(depthStencilAttachment.barrier)->gpuBarrier() : &gpuDevice->defaultDepthStencilBarrier;
 }
 
-bool CCVKGPURenderPass::hasShadingAttachment(uint32_t subPassId) const
-{
-        CC_ASSERT(subPassId < subpasses.size());
-        return subpasses[subPassId].shadingRate != INVALID_BINDING;
+bool CCVKGPURenderPass::hasShadingAttachment(uint32_t subPassId) const {
+    CC_ASSERT(subPassId < subpasses.size());
+    return subpasses[subPassId].shadingRate != INVALID_BINDING;
 }
 
 VkSampleCountFlagBits CCVKGPUContext::getSampleCountForAttachments(Format format, VkFormat vkFormat, SampleCount sampleCount) const {

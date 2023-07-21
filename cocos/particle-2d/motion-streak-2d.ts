@@ -24,11 +24,11 @@
 */
 
 import { ccclass, executeInEditMode, serializable, playOnFocus, menu, help, editable, type } from 'cc.decorator';
-import { EDITOR } from 'internal:constants';
+import { EDITOR_NOT_IN_PREVIEW } from 'internal:constants';
 import { UIRenderer } from '../2d/framework';
 import { Texture2D } from '../asset/assets/texture-2d';
 import { IBatcher } from '../2d/renderer/i-batcher';
-import { Vec2, cclegacy } from '../core';
+import { Vec2 } from '../core';
 
 class Point {
     public point = new Vec2();
@@ -186,10 +186,10 @@ export class MotionStreak extends UIRenderer {
             this._assembler = assembler;
         }
 
-        if (!this.renderData) {
+        if (!this._renderData) {
             if (this._assembler && this._assembler.createData) {
                 this._renderData = this._assembler.createData(this);
-                this.renderData!.material = this.material;
+                this._renderData!.material = this.material;
                 this._updateColor();
             }
         }
@@ -216,11 +216,11 @@ export class MotionStreak extends UIRenderer {
      */
     public reset () {
         this._points.length = 0;
-        if (this.renderData) this.renderData.clear();
+        if (this._renderData) this._renderData.clear();
     }
 
     public lateUpdate (dt) {
-        if (EDITOR && !cclegacy.GAME_VIEW && !this._preview) return;
+        if (EDITOR_NOT_IN_PREVIEW && !this._preview) return;
         if (this._assembler) this._assembler.update(this, dt);
     }
 
@@ -228,6 +228,6 @@ export class MotionStreak extends UIRenderer {
      * @deprecated since v3.5.0, this is an engine private interface that will be removed in the future.
      */
     public _render (render: IBatcher) {
-        render.commitComp(this, this.renderData, this._texture, this._assembler, null);
+        render.commitComp(this, this._renderData, this._texture, this._assembler, null);
     }
 }

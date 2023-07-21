@@ -7,9 +7,9 @@ const REGEX = /^https?:\/\/.*/;
 const downloader = cc.assetManager.downloader;
 const parser = cc.assetManager.parser;
 const presets = cc.assetManager.presets;
-downloader.maxConcurrency = 8;
+downloader.maxConcurrency = 12;
 downloader.maxRequestsPerFrame = 64;
-presets.scene.maxConcurrency = 10;
+presets.scene.maxConcurrency = 12;
 presets.scene.maxRequestsPerFrame = 64;
 
 const subpackages = {};
@@ -26,9 +26,7 @@ function downloadScript (url, options, onComplete) {
     if (REGEX.test(url)) {
         onComplete && onComplete(new Error('Can not load remote scripts'));
     } else {
-        if (sys.platform === sys.Platform.TAOBAO_MINI_GAME) {
-            require(`../../../${url}`);
-        } else if (sys.platform !== sys.Platform.TAOBAO_CREATIVE_APP) { //Can't load scripts dynamically on Taobao platform
+        if (sys.platform !== sys.Platform.TAOBAO_CREATIVE_APP) { //Can't load scripts dynamically on Taobao platform
             require(`../../../${url}`);
         }
         onComplete && onComplete(null);
@@ -255,7 +253,6 @@ function downloadBundle (nameOrUrl, options, onComplete) {
             url = `assets/${bundleName}`;
             js = `assets/${bundleName}/index.${suffix}js`;
         }
-
         if (sys.platform === sys.Platform.TAOBAO_MINI_GAME) {
             require(js);
         } else if (sys.platform !== sys.Platform.TAOBAO_CREATIVE_APP) { // Can't load scripts dynamically on Taobao platform
@@ -281,7 +278,7 @@ function downloadBundle (nameOrUrl, options, onComplete) {
                     // to remove in the future
                     if (sys.platform === sys.Platform.ALIPAY_MINI_GAME && sys.os === sys.OS.ANDROID) {
                         const resPath = `${unzipPath}res/`;
-                        if (fs.accessSync({ path: resPath })) {
+                        if (fs.accessSync({ path: resPath }).success) {
                             data.base = resPath;
                         }
                     }

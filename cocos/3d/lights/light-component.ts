@@ -170,7 +170,7 @@ export class Light extends Component {
      * 光源色温。
      */
     @slide
-    @range([1000, 15000, 1])
+    @range([1000, 15000, 100])
     @tooltip('i18n:lights.color_temperature')
     get colorTemperature () {
         return this._colorTemperature;
@@ -291,6 +291,12 @@ export class Light extends Component {
             case scene.LightType.SPOT:
                 renderScene.addSpotLight(this._light as scene.SpotLight);
                 break;
+            case scene.LightType.POINT:
+                renderScene.addPointLight(this._light as scene.PointLight);
+                break;
+            case scene.LightType.RANGED_DIRECTIONAL:
+                renderScene.addRangedDirLight(this._light as scene.RangedDirectionalLight);
+                break;
             default:
                 break;
             }
@@ -310,6 +316,12 @@ export class Light extends Component {
                 break;
             case scene.LightType.SPOT:
                 renderScene.removeSpotLight(this._light as scene.SpotLight);
+                break;
+            case scene.LightType.POINT:
+                renderScene.removePointLight(this._light as scene.PointLight);
+                break;
+            case scene.LightType.RANGED_DIRECTIONAL:
+                renderScene.removeRangedDirLight(this._light as scene.RangedDirectionalLight);
                 break;
             default:
                 break;

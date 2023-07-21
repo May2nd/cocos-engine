@@ -23,7 +23,7 @@
 */
 
 import { ccclass, editable, serializable, type } from 'cc.decorator';
-import { DEV, DEBUG, EDITOR } from 'internal:constants';
+import { DEV, DEBUG, EDITOR, EDITOR_NOT_IN_PREVIEW } from 'internal:constants';
 import { Layers } from './layers';
 import { NodeUIProperties } from './node-ui-properties';
 import { legacyCC } from '../core/global-exports';
@@ -265,8 +265,8 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     protected static _findComponent<T extends Component> (node: Node, constructor: Constructor<T> | AbstractedConstructor<T>): T | null {
         const cls = constructor;
         const comps = node._components;
-        // @ts-expect-error internal rtti property
-        if (cls._sealed) {
+        // NOTE: internal rtti property
+        if ((cls as any)._sealed) {
             for (let i = 0; i < comps.length; ++i) {
                 const comp = comps[i];
                 if (comp.constructor === constructor) {
@@ -287,8 +287,8 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     protected static _findComponents<T extends Component> (node: Node, constructor: Constructor<T> | AbstractedConstructor<T>, components: Component[]) {
         const cls = constructor;
         const comps = node._components;
-        // @ts-expect-error internal rtti property
-        if (cls._sealed) {
+        // NOTE: internal rtti property
+        if ((cls as any)._sealed) {
             for (let i = 0; i < comps.length; ++i) {
                 const comp = comps[i];
                 if (comp.constructor === constructor) {
@@ -342,10 +342,18 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     @serializable
     protected _active = true;
 
+    /**
+     * NOTE: components getter is typeof ReadonlyArray
+     * @engineInternal
+     */
+    public getWritableComponents () { return this._components; }
     @serializable
     protected _components: Component[] = [];
 
-    // The PrefabInfo object
+    /**
+     * TODO(PP_Pro): this property should be exported to editor only, we should support editorOnly tag.
+     * Tracking issue: https://github.com/cocos/cocos-engine/issues/14613
+     */
     @serializable
     protected _prefab: PrefabInfo | null = null;
 
@@ -353,6 +361,10 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
 
     protected _activeInHierarchy = false;
 
+    /**
+     * @engineInternal
+     */
+    public set id (v: string) { this._id = v; }
     protected _id: string = idGenerator.getNewId();
 
     protected _name: string;
@@ -361,6 +373,14 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     protected _eventMask = 0;
 
     protected _siblingIndex = 0;
+    /**
+     * @engineInternal
+     */
+    public get siblingIndex (): number { return this._siblingIndex; }
+    /**
+     * @engineInternal
+     */
+    public set siblingIndex (val: number) { this._siblingIndex = val; }
 
     /**
      * @en
@@ -408,6 +428,15 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      */
     public getParent () {
         return this._parent;
+    }
+
+    /**
+     * As there are setter and setParent(), and both of them not just modify _parent, but have
+     * other logic. So add a new function that only modify _parent value.
+     * @engineInternal
+     */
+    public modifyParent (parent: this | null) {
+        this._parent = parent;
     }
 
     /**
@@ -997,6 +1026,9 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
         if (this._activeInHierarchy) {
             legacyCC.director._nodeActivator.activateComp(component);
         }
+        if (EDITOR_NOT_IN_PREVIEW) {
+            component.resetInEditor?.();
+        }
 
         return component;
     }
@@ -1277,6 +1309,8 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
         const newPrefabInfo = cloned._prefab;
         if (EDITOR && newPrefabInfo) {
             if (cloned === newPrefabInfo.root) {
+                // when instantiate prefab in Editor,should add prefab instance info for root node
+                EditorExtends.PrefabUtils.addPrefabInstance?.(cloned);
                 // newPrefabInfo.fileId = '';
             } else {
                 // var PrefabUtils = Editor.require('scene://utils/prefab');
@@ -1307,12 +1341,14 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
             const inCurrentSceneNow = newParent && newParent.isChildOf(scene);
             if (!inCurrentSceneBefore && inCurrentSceneNow) {
                 // attached
-                // @ts-expect-error Polyfilled functions in node-dev.ts
-                this._registerIfAttached!(true);
+                // TODO: `_registerIfAttached` is injected property
+                // issue: https://github.com/cocos/cocos-engine/issues/14643
+                (this as any)._registerIfAttached!(true);
             } else if (inCurrentSceneBefore && !inCurrentSceneNow) {
                 // detached
-                // @ts-expect-error Polyfilled functions in node-dev.ts
-                this._registerIfAttached!(false);
+                // TODO: `_registerIfAttached` is injected property
+                // issue: https://github.com/cocos/cocos-engine/issues/14643
+                (this as any)._registerIfAttached!(false);
             }
 
             // conflict detection
@@ -1333,8 +1369,9 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
         const parent = this._parent;
         const destroyByParent: boolean = (!!parent) && ((parent._objFlags & Destroying) !== 0);
         if (!destroyByParent && EDITOR) {
-            // @ts-expect-error Polyfilled functions in node-dev.ts
-            this._registerIfAttached!(false);
+            // TODO: `_registerIfAttached` is injected property
+            // issue: https://github.com/cocos/cocos-engine/issues/14643
+            (this as any)._registerIfAttached!(false);
         }
 
         // remove from persist
@@ -1440,15 +1477,22 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * @deprecated since v3.5.0, this is an engine private interface that will be removed in the future.
      */
     public _static = false;
-
-    // world transform, don't access this directly
-    protected declare _pos: Vec3;
-
-    protected declare _rot: Quat;
-
-    protected declare _scale: Vec3;
-
-    protected declare _mat: Mat4;
+    /**
+     * @engineInternal NOTE: this is engineInternal interface that doesn't have a side effect of updating the transforms
+     */
+    public declare _pos: Vec3;
+    /**
+     * @engineInternal NOTE: this is engineInternal interface that doesn't have a side effect of updating the transforms
+     */
+    public declare _rot: Quat;
+    /**
+     * @engineInternal NOTE: this is engineInternal interface that doesn't have a side effect of updating the transforms
+     */
+    public declare _scale: Vec3;
+    /**
+     * @engineInternal NOTE: this is engineInternal interface that doesn't have a side effect of updating the transforms
+     */
+    public declare _mat: Mat4;
 
     // local transform
     @serializable
@@ -1701,6 +1745,16 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     }
 
     /**
+     * @zh 节点的变换改动版本号。
+     * @en The transformation change version number of the node.
+     * @engineInternal
+     * @internal
+     */
+    get flagChangedVersion () {
+        return this._flagChangeVersion;
+    }
+
+    /**
      * @en Whether the node's transformation have changed during the current frame.
      * @zh 这个节点的空间变换信息在当前帧内是否有变过？
      */
@@ -1741,11 +1795,25 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
             // discard props disallow to synchronize
             const isRoot = this._prefab?.root === this;
             if (isRoot) {
-                serializationOutput.writeProperty('_objFlags', this._objFlags);
-                serializationOutput.writeProperty('_parent', this._parent);
-                serializationOutput.writeProperty('_prefab', this._prefab);
-                if (context.customArguments.keepNodeUuid) {
-                    serializationOutput.writeProperty('_id', this._id);
+                // if B prefab is in A prefab,B can be referenced by component.We should discard it.because B is not the root of prefab
+                let isNestedPrefab = false;
+                let parent = this.getParent();
+                while (parent) {
+                    const nestedRoots = parent?._prefab?.nestedPrefabInstanceRoots;
+                    if (nestedRoots && nestedRoots.length > 0) {
+                        // if this node is not in nestedPrefabInstanceRoots,it means this node is not the root of prefab,so it should be discarded.
+                        isNestedPrefab = !nestedRoots.some((root) => root === this);
+                        break;
+                    }
+                    parent = parent.getParent();
+                }
+                if (!isNestedPrefab) {
+                    serializationOutput.writeProperty('_objFlags', this._objFlags);
+                    serializationOutput.writeProperty('_parent', this._parent);
+                    serializationOutput.writeProperty('_prefab', this._prefab);
+                    if (context.customArguments.keepNodeUuid) {
+                        serializationOutput.writeProperty('_id', this._id);
+                    }
                 }
                 // TODO: editorExtrasTag may be a symbol in the future
                 serializationOutput.writeProperty(editorExtrasTag, this[editorExtrasTag]);
@@ -1997,8 +2065,8 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
                     }
                     if (dirtyBits & TransformBit.SCALE) {
                         Vec3.copy(child._scale, child._lscale);
-                        Mat4.fromRTS(child._mat, child._rot, child._pos, child._scale);
                     }
+                    Mat4.fromRTS(child._mat, child._rot, child._pos, child._scale);
                 }
             }
 

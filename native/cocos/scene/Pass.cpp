@@ -27,6 +27,7 @@
 #include "cocos/bindings/jswrapper/SeApi.h"
 #include "cocos/renderer/pipeline/custom/RenderingModule.h"
 #include "core/Root.h"
+#include "core/assets/EffectAsset.h"
 #include "core/assets/TextureBase.h"
 #include "core/builtin/BuiltinResMgr.h"
 #include "core/platform/Debug.h"
@@ -36,7 +37,6 @@
 #include "renderer/core/ProgramLib.h"
 #include "renderer/gfx-base/GFXDef.h"
 #include "renderer/gfx-base/states/GFXSampler.h"
-#include "renderer/pipeline/BatchedBuffer.h"
 #include "renderer/pipeline/Define.h"
 #include "renderer/pipeline/InstancedBuffer.h"
 #include "scene/Define.h"
@@ -220,7 +220,8 @@ void Pass::setUniform(uint32_t handle, const MaterialProperty &value) {
     _rootBufferDirty = true;
 }
 
-MaterialProperty &Pass::getUniform(uint32_t handle, MaterialProperty &out) const {
+MaterialProperty Pass::getUniform(uint32_t handle) const {
+    MaterialProperty out;
     const uint32_t binding = Pass::getBindingFromHandle(handle);
     const gfx::Type type = Pass::getTypeFromHandle(handle);
     const uint32_t ofs = Pass::getOffsetFromHandle(handle);
@@ -295,16 +296,6 @@ pipeline::InstancedBuffer *Pass::getInstancedBuffer(int32_t extraKey) {
     return instancedBuffer;
 }
 
-pipeline::BatchedBuffer *Pass::getBatchedBuffer(int32_t extraKey) {
-    auto iter = _batchedBuffers.find(extraKey);
-    if (iter != _batchedBuffers.end()) {
-        return iter->second.get();
-    }
-    auto *batchedBuffers = ccnew pipeline::BatchedBuffer(this);
-    _batchedBuffers[extraKey] = batchedBuffers;
-    return batchedBuffers;
-}
-
 void Pass::destroy() {
     if (!_buffers.empty()) {
         for (const auto &u : _shaderInfo->blocks) {
@@ -323,11 +314,6 @@ void Pass::destroy() {
         ib.second->destroy();
     }
     _instancedBuffers.clear();
-
-    for (auto &bb : _batchedBuffers) {
-        bb.second->destroy();
-    }
-    _batchedBuffers.clear();
 
     // NOTE: There may be many passes reference the same descriptor set,
     // so here we can't use _descriptorSet->destroy() to release it.
@@ -379,12 +365,12 @@ void Pass::resetTexture(const ccstd::string &name, uint32_t index) {
     const gfx::Type type = Pass::getTypeFromHandle(handle);
     const uint32_t binding = Pass::getBindingFromHandle(handle);
     ccstd::string texName;
-    IPropertyInfo *info = nullptr;
+    const IPropertyInfo *info = nullptr;
     auto iter = _properties.find(name);
     if (iter != _properties.end()) {
         if (iter->second.value.has_value()) {
             info = &iter->second;
-            ccstd::string *pStrVal = ccstd::get_if<ccstd::string>(&iter->second.value.value());
+            const ccstd::string *pStrVal = ccstd::get_if<ccstd::string>(&iter->second.value.value());
             if (pStrVal != nullptr) {
                 texName = (*pStrVal) + getStringFromType(type);
             }
@@ -418,11 +404,10 @@ void Pass::resetUBOs() {
         uint32_t ofs = 0;
         for (const auto &cur : u.members) {
             const auto &block = _blocks[u.binding];
-            const auto &info = _properties[cur.name];
-            const auto &givenDefault = info.value;
+            auto iter = _properties.find(cur.name);
             const auto &value =
-                (givenDefault.has_value()
-                     ? ccstd::get<ccstd::vector<float>>(givenDefault.value())
+                (iter != _properties.end() && iter->second.value.has_value()
+                     ? ccstd::get<ccstd::vector<float>>(iter->second.value.value())
                      : getDefaultFloatArrayFromType(cur.type));
             const uint32_t size = (gfx::getTypeSize(cur.type) >> 2) * cur.count;
             for (size_t k = 0; (k + value.size()) <= size; k += value.size()) {
@@ -571,6 +556,7 @@ IPassInfoFull Pass::getPassInfoFull() const {
     ret.phase = _phaseString;
 
     ret.passID = _passID;
+    ret.subpassID = _subpassID;
     ret.phaseID = _phaseID;
 
     return ret;
@@ -592,8 +578,9 @@ void Pass::doInit(const IPassInfoFull &info, bool /*copyDefines*/ /* = false */)
     if (programLib2) {
         const auto *rendering = render::getRenderingModule();
         CC_EXPECTS(rendering);
-        if (info.phaseID != 0xFFFFFFFF) {
+        if (info.phaseID != INVALID_ID) {
             _passID = info.passID;
+            _subpassID = info.subpassID;
             _phaseID = info.phaseID;
         } else {
             if (info.pass) {
@@ -601,15 +588,24 @@ void Pass::doInit(const IPassInfoFull &info, bool /*copyDefines*/ /* = false */)
             } else {
                 _passID = rendering->getPassID("default");
             }
-            CC_ENSURES(_passID != 0xFFFFFFFF);
+            CC_ENSURES(_passID != INVALID_ID);
+            if (info.subpass) {
+                CC_EXPECTS(!info.subpass->empty());
+                _subpassID = rendering->getSubpassID(_passID, *info.subpass);
+                CC_ENSURES(_subpassID != INVALID_ID);
+            }
             if (info.phase) {
-                _phaseID = rendering->getPhaseID(_passID, *info.phase);
+                _phaseID = rendering->getPhaseID(getSubpassOrPassID(), *info.phase);
             } else {
-                _phaseID = rendering->getPhaseID(_passID, "default");
+                _phaseID = rendering->getPhaseID(getSubpassOrPassID(), "default");
             }
         }
         if (_passID == INVALID_ID) {
             CC_LOG_ERROR("Invalid pass ID");
+            return;
+        }
+        if (info.subpass && _subpassID == INVALID_ID) {
+            CC_LOG_ERROR("Invalid subpass ID");
             return;
         }
         if (_phaseID == INVALID_ID) {
@@ -823,12 +819,7 @@ void Pass::syncBatchingScheme() {
             _batchingScheme = BatchingSchemes::NONE;
         }
     } else {
-        auto iter = _defines.find("USE_BATCHING");
-        if (iter != _defines.end() && macroRecordAsBool(iter->second)) {
-            _batchingScheme = BatchingSchemes::VB_MERGING;
-        } else {
-            _batchingScheme = BatchingSchemes::NONE;
-        }
+        _batchingScheme = BatchingSchemes::NONE;
     }
 }
 
@@ -837,6 +828,7 @@ void Pass::initPassFromTarget(Pass *target, const gfx::DepthStencilState &dss, c
     _stage = target->_stage;
     _phase = target->_phase;
     _passID = target->_passID;
+    _subpassID = target->_subpassID;
     _phaseID = target->_phaseID;
     _batchingScheme = target->_batchingScheme;
     _primitive = target->_primitive;

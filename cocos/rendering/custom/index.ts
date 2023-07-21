@@ -23,17 +23,18 @@
 */
 
 import { EDITOR } from 'internal:constants';
-import { Pipeline, PipelineBuilder } from './pipeline';
+import { BasicPipeline, PipelineBuilder } from './pipeline';
 import { WebPipeline } from './web-pipeline';
 import { macro } from '../../core/platform/macro';
 import { DeferredPipelineBuilder, ForwardPipelineBuilder } from './builtin-pipelines';
-import { CustomPipelineBuilder, NativePipelineBuilder } from './custom-pipeline';
+import { CustomPipelineBuilder, TestPipelineBuilder } from './custom-pipeline';
 import { LayoutGraphData, loadLayoutGraphData } from './layout-graph';
 import { BinaryInputArchive } from './binary-archive';
 import { WebProgramLibrary } from './web-program-library';
 import { Device } from '../../gfx';
 import { initializeLayoutGraphData, terminateLayoutGraphData, getCustomPassID, getCustomPhaseID } from './layout-graph-utils';
 import { ProgramLibrary } from './private';
+import { PostProcessBuilder } from '../post-process/post-process-builder';
 
 let _pipeline: WebPipeline | null = null;
 
@@ -47,7 +48,7 @@ export * from './archive';
 export const enableEffectImport = true;
 export const programLib: ProgramLibrary = new WebProgramLibrary(defaultLayoutGraph);
 
-export function createCustomPipeline (): Pipeline {
+export function createCustomPipeline (): BasicPipeline {
     const layoutGraph = defaultLayoutGraph;
 
     const ppl = new WebPipeline(layoutGraph);
@@ -63,20 +64,23 @@ export const customPipelineBuilderMap = new Map<string, PipelineBuilder>();
 export function setCustomPipeline (name: string, builder: PipelineBuilder) {
     customPipelineBuilderMap.set(name, builder);
 }
-
 export function getCustomPipeline (name: string): PipelineBuilder {
-    let builder = customPipelineBuilderMap.get(name) || null;
-    if (builder === null) {
-        builder = customPipelineBuilderMap.get('Forward')!;
+    let builder = customPipelineBuilderMap.get(name);
+    if (!builder) {
+        if (name === 'Test') {
+            builder = new TestPipelineBuilder(_pipeline!.pipelineSceneData);
+            customPipelineBuilderMap.set('Test', builder);
+        } else {
+            builder = customPipelineBuilderMap.get('Forward')!;
+        }
     }
     return builder;
 }
 
 function addCustomBuiltinPipelines (map: Map<string, PipelineBuilder>) {
-    map.set('Forward', new ForwardPipelineBuilder());
+    map.set('Forward', new PostProcessBuilder());
     map.set('Deferred', new DeferredPipelineBuilder());
-    map.set('Custom', new CustomPipelineBuilder());
-    map.set('Native', new NativePipelineBuilder());
+    map.set('Deprecated', new CustomPipelineBuilder());
 }
 
 addCustomBuiltinPipelines(customPipelineBuilderMap);

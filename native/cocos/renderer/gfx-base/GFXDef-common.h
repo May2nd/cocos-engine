@@ -173,21 +173,11 @@ enum class Feature : uint32_t {
     MULTIPLE_RENDER_TARGETS,
     BLEND_MINMAX,
     COMPUTE_SHADER,
-    // This flag indicates whether the device can benefit from subpass-style usages.
-    // Specifically, this only differs on the GLES backends: the Framebuffer Fetch
-    // extension is used to simulate input attachments, so the flag is not set when
-    // the extension is not supported, and you should switch to the fallback branch
-    // (without the extension requirement) in GLSL shader sources accordingly.
-    // Everything else can remain the same.
-    //
-    // Another caveat when using the Framebuffer Fetch extensions in shaders is that
-    // for subpasses with exactly 4 inout attachments the output is automatically set
-    // to the last attachment (taking advantage of 'inout' property), and a separate
-    // blit operation (if needed) will be added for you afterwards to transfer the
-    // rendering result to the correct subpass output texture. This is to ameliorate
-    // the max number of attachment limit(4) situation for many devices, and shader
-    // sources inside this kind of subpass must match this behavior.
+    // @deprecated
     INPUT_ATTACHMENT_BENEFIT,
+    SUBPASS_COLOR_INPUT,
+    SUBPASS_DEPTH_STENCIL_INPUT,
+    RASTERIZATION_ORDER_NOCOHERENT,
     COUNT,
 };
 CC_ENUM_CONVERSION_OPERATOR(Feature);
@@ -481,9 +471,9 @@ CC_ENUM_BITWISE_OPERATORS(TextureUsageBit);
 
 enum class TextureFlagBit : uint32_t {
     NONE = 0,
-    GEN_MIPMAP = 0x1,     // Generate mipmaps using bilinear filter
-    GENERAL_LAYOUT = 0x2, // For inout framebuffer attachments
-    EXTERNAL_OES = 0x4, // External oes texture
+    GEN_MIPMAP = 0x1,      // Generate mipmaps using bilinear filter
+    GENERAL_LAYOUT = 0x2,  // For inout framebuffer attachments
+    EXTERNAL_OES = 0x4,    // External oes texture
     EXTERNAL_NORMAL = 0x8, // External normal texture
 };
 using TextureFlags = TextureFlagBit;
@@ -1286,10 +1276,6 @@ struct ALIGNAS(8) ColorAttachment {
     LoadOp loadOp{LoadOp::CLEAR};
     StoreOp storeOp{StoreOp::STORE};
     GeneralBarrier *barrier{nullptr};
-    uint32_t isGeneralLayout{0}; // @ts-boolean
-#if CC_CPU_ARCH == CC_CPU_ARCH_64
-    uint32_t _padding{0};
-#endif
 
     EXPOSE_COPY_FN(ColorAttachment)
 };
@@ -1304,10 +1290,6 @@ struct ALIGNAS(8) DepthStencilAttachment {
     LoadOp stencilLoadOp{LoadOp::CLEAR};
     StoreOp stencilStoreOp{StoreOp::STORE};
     GeneralBarrier *barrier{nullptr};
-    uint32_t isGeneralLayout{0}; // @ts-boolean
-#if CC_CPU_ARCH == CC_CPU_ARCH_64
-    uint32_t _padding{0};
-#endif
 
     EXPOSE_COPY_FN(DepthStencilAttachment)
 };
@@ -1333,15 +1315,9 @@ struct ALIGNAS(8) SubpassDependency {
     uint32_t srcSubpass{0};
     uint32_t dstSubpass{0};
     GeneralBarrier *generalBarrier{nullptr};
-    BufferBarrier **bufferBarriers{nullptr};
-    Buffer **buffers{nullptr};
-    uint32_t bufferBarrierCount{0};
-    TextureBarrier **textureBarriers{nullptr};
-    Texture **textures{nullptr};
-    uint32_t textureBarrierCount{0};
-#if CC_CPU_ARCH == CC_CPU_ARCH_32
-    uint32_t _padding{0};
-#endif
+
+    AccessFlags prevAccesses{};
+    AccessFlags nextAccesses{};
 
     EXPOSE_COPY_FN(SubpassDependency)
 };
@@ -1528,7 +1504,7 @@ struct BlendState {
 
     void setTarget(index_t index, const BlendTarget &target) {
         if (index >= targets.size()) {
-            targets.resize(index + 1);
+            targets.resize(static_cast<size_t>(index) + 1);
         }
         targets[index] = target;
     }

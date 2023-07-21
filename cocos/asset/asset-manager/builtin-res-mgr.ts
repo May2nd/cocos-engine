@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import { EDITOR, TEST } from 'internal:constants';
+import { EDITOR, EDITOR_NOT_IN_PREVIEW, TEST } from 'internal:constants';
 import { Asset } from '../assets/asset';
 import { ImageAsset, ImageSource } from '../assets/image-asset';
 import { SpriteFrame } from '../../2d/assets/sprite-frame';
@@ -32,10 +32,10 @@ import assetManager from './asset-manager';
 import { BuiltinBundleName } from './shared';
 import Bundle from './bundle';
 import { Settings, settings, cclegacy } from '../../core';
-import releaseManager from './release-manager';
+import { releaseManager } from './release-manager';
 import { Material } from '../assets';
 
-class BuiltinResMgr {
+export class BuiltinResMgr {
     protected _resources: Record<string, Asset> = {};
     protected _materialsToBeCompiled: Material[] = [];
 
@@ -330,7 +330,7 @@ class BuiltinResMgr {
                         assets.forEach((asset) => {
                             resources[asset.name] = asset;
                             // In Editor, no need to ignore asset destroy, we use auto gc to handle destroy
-                            if (!EDITOR || cclegacy.GAME_VIEW) { releaseManager.addIgnoredAsset(asset); }
+                            if (!EDITOR_NOT_IN_PREVIEW) { releaseManager.addIgnoredAsset(asset); }
                             if (asset instanceof cclegacy.Material) {
                                 this._materialsToBeCompiled.push(asset as Material);
                             }

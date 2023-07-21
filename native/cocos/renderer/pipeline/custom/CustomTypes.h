@@ -53,12 +53,16 @@ class CustomPipelineContext : public Customization {
 public:
     CustomPipelineContext() noexcept = default;
 
+    virtual IntrusivePtr<gfx::Buffer> createCustomBuffer(std::string_view type, const gfx::BufferInfo &info) = 0;
+    virtual IntrusivePtr<gfx::Texture> createCustomTexture(std::string_view type, const gfx::TextureInfo &info) = 0;
     virtual void destroy() noexcept = 0;
 };
 
 struct CustomRenderGraphContext {
     std::shared_ptr<CustomPipelineContext> pipelineContext;
     const RenderGraph* renderGraph{nullptr};
+    const ResourceGraph* resourceGraph{nullptr};
+    gfx::CommandBuffer* primaryCommandBuffer{nullptr};
 };
 
 class CustomRenderPass : public Customization {

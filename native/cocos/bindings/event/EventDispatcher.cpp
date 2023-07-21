@@ -38,6 +38,7 @@ se::Object *jsTouchObjArray = nullptr;
 se::Object *jsMouseEventObj = nullptr;
 se::Object *jsKeyboardEventObj = nullptr;
 se::Object *jsControllerEventArray = nullptr;
+se::Object *jsControllerChangeEventArray = nullptr;
 se::Object *jsResizeEventObj = nullptr;
 bool inited = false;
 bool busListenerInited = false;
@@ -62,6 +63,7 @@ events::Touch::Listener EventDispatcher::listenerTouch;
 events::Mouse::Listener EventDispatcher::listenerMouse;
 events::Keyboard::Listener EventDispatcher::listenerKeyboard;
 events::Controller::Listener EventDispatcher::listenerConroller;
+events::ControllerChange::Listener EventDispatcher::listenerConrollerChange;
 events::Tick::Listener EventDispatcher::listenerTick;
 events::Resize::Listener EventDispatcher::listenerResize;
 events::Orientation::Listener EventDispatcher::listenerOrientation;
@@ -86,6 +88,7 @@ void EventDispatcher::init() {
         listenerMouse.bind(&dispatchMouseEvent);
         listenerKeyboard.bind(&dispatchKeyboardEvent);
         listenerConroller.bind(&dispatchControllerEvent);
+        listenerConrollerChange.bind(&dispatchControllerChangeEvent);
         listenerTick.bind(&dispatchTickEvent);
         listenerResize.bind(&dispatchResizeEvent);
         listenerOrientation.bind(&dispatchOrientationChangeEvent);
@@ -116,6 +119,12 @@ void EventDispatcher::destroy() {
         jsControllerEventArray->unroot();
         jsControllerEventArray->decRef();
         jsControllerEventArray = nullptr;
+    }
+
+    if (jsControllerChangeEventArray != nullptr) {
+        jsControllerChangeEventArray->unroot();
+        jsControllerChangeEventArray->decRef();
+        jsControllerChangeEventArray = nullptr;
     }
 
     if (jsMouseEventObj != nullptr) {
@@ -277,6 +286,7 @@ void EventDispatcher::dispatchKeyboardEvent(const KeyboardEvent &keyboardEvent) 
     jsKeyboardEventObj->setProperty("repeat", se::Value(keyboardEvent.action == KeyboardEvent::Action::REPEAT));
     jsKeyboardEventObj->setProperty("keyCode", se::Value(keyboardEvent.key));
     jsKeyboardEventObj->setProperty("windowId", se::Value(keyboardEvent.windowId));
+    jsKeyboardEventObj->setProperty("code", se::Value(keyboardEvent.code));
 
     se::ValueArray args;
     args.emplace_back(se::Value(jsKeyboardEventObj));
@@ -333,6 +343,25 @@ void EventDispatcher::dispatchControllerEvent(const ControllerEvent &controllerE
     EventDispatcher::doDispatchJsEvent(eventName, args);
 }
 
+void EventDispatcher::dispatchControllerChangeEvent(const ControllerChangeEvent &changeEvent) {
+    se::AutoHandleScope scope;
+    if (!jsControllerChangeEventArray) {
+        jsControllerChangeEventArray = se::Object::createArrayObject(0);
+        jsControllerChangeEventArray->root();
+    }
+
+    const char *eventName = "onControllerChange";
+    jsControllerChangeEventArray->setProperty("length", se::Value(static_cast<uint32_t>(changeEvent.controllerIds.size())));
+
+    int index = 0;
+    for (const auto id : changeEvent.controllerIds) {
+        jsControllerChangeEventArray->setArrayElement(index++, se::Value(id));
+    }
+    se::ValueArray args;
+    args.emplace_back(se::Value(jsControllerChangeEventArray));
+    EventDispatcher::doDispatchJsEvent(eventName, args);
+}
+
 void EventDispatcher::dispatchTickEvent(float /*dt*/) {
     if (!se::ScriptEngine::getInstance()->isValid()) {
         return;
@@ -371,7 +400,7 @@ void EventDispatcher::dispatchResizeEvent(int width, int height, uint32_t window
 }
 
 void EventDispatcher::dispatchOrientationChangeEvent(int orientation) {
-    //Ts's logic is same as the 'onResize', so remove code here temporary.
+    // Ts's logic is same as the 'onResize', so remove code here temporary.
 }
 
 void EventDispatcher::dispatchEnterBackgroundEvent() {

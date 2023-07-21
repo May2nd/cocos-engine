@@ -1,5 +1,5 @@
 #if (CC_PIPELINE_TYPE == CC_PIPELINE_TYPE_FORWARD || CC_FORCE_FORWARD_SHADING)
-  #if CC_FORWARD_ADD && !CC_ENABLE_CLUSTERED_LIGHT_CULLING
+  #if CC_FORWARD_ADD
     void CCSurfacesLighting(inout LightingResult lightingResultAccumulated, in SurfacesMaterialData surfaceData, in vec2 shadowBias)
     {
       vec3 worldPos;
@@ -27,9 +27,10 @@
       for (int i = 0; i < LIGHTS_PER_PASS; i++) {
         if (i >= numLights) break;
 
-        CCSurfacesLightingCalculateIntermediateData_PerLight(lightingData, surfaceData, cc_lightPos[i].xyz - worldPos);
+        vec3 lightDirWithLength = IS_RANGED_DIRECTIONAL_LIGHT(cc_lightPos[i].w) ? -normalize(cc_lightDir[i].xyz) : cc_lightPos[i].xyz - worldPos;
+        CCSurfacesLightingCalculateIntermediateData_PerLight(lightingData, surfaceData, lightDirWithLength);
         CCSurfacesLightingCalculateColorWithLighting(lightingResult.diffuseColorWithLighting, lightingResult.specularColorWithLighting, lightingResult.specularColorWithEnvLighting, surfaceData, lightingData);
-  
+
         vec3 diffuseLighting, specularLighting;
         CCSurfacesLightingCalculateDirect(diffuseLighting, specularLighting, lightingData, cc_lightColor[i]);
 
@@ -56,24 +57,30 @@
           #endif
         }
       #endif
-      
+
       #if CC_USE_DEBUG_VIEW == CC_SURFACES_DEBUG_VIEW_COMPOSITE_AND_MISC
-        if (!IS_DEBUG_VIEW_COMPOSITE_ENABLE_SHADOW) {
+        if (!IS_DEBUG_VIEW_COMPOSITE_ENABLE_SHADOW)
           shadow = 1.0;
-        }
       #endif
 
         lightingResult.shadow = shadow;
 
-        float distAtt = CCSurfacesLightingCalculateDistanceAttenuation(lightingData, cc_lightSizeRangeAngle[i]);
+        // attenuations
+        float distAtt = 1.0;
+        if(IS_RANGED_DIRECTIONAL_LIGHT(cc_lightPos[i].w)) {
+          distAtt = GetOutOfRange(worldPos, cc_lightPos[i].xyz, cc_lightDir[i].xyz, cc_lightSizeRangeAngle[i].xyz, cc_lightBoundingSizeVS[i].xyz);
+        } else {
+          distAtt = CCSurfacesLightingCalculateDistanceAttenuation(lightingData, cc_lightSizeRangeAngle[i], cc_lightPos[i].w);
+        }
 
         float angleAtt = 1.0;
-        if (cc_lightPos[i].w > 0.0) {
+        if (IS_SPOT_LIGHT(cc_lightPos[i].w)) {
           angleAtt = CCSurfacesLightingCalculateAngleAttenuation(lightingData, cc_lightSizeRangeAngle[i], -cc_lightDir[i].xyz);
         }
 
         float multiplier = distAtt * angleAtt;
 
+        // output
         lightingData.angleAttenuation = angleAtt;
         lightingData.distAttenuation = distAtt;
         lightingResult.directDiffuse = diffuseLighting * multiplier;
@@ -90,14 +97,14 @@
         #if CC_SURFACES_LIGHTING_TRANSMIT_DIFFUSE
           LightingIntermediateData lightingDataTD;
           CCSurfacesGetLightingIntermediateDataTransmitDiffuse(lightingDataTD, lightingData, surfaceData);
-          CCSurfacesLightingCalculateIntermediateData_PerLight(lightingDataTD, surfaceData, cc_lightPos[i].xyz - worldPos);
+          CCSurfacesLightingCalculateIntermediateData_PerLight(lightingDataTD, surfaceData, lightDirWithLength);
           CCSurfacesLightingCalculateDirectTransmitDiffuse(lightingResult.directTransmitDiffuse, lightingDataTD, attenuatedLightColorAndIntensity, lightingResult.shadow);
         #endif
 
         #if CC_SURFACES_LIGHTING_2ND_LAYER_SPECULAR
           LightingIntermediateData lightingData2ndSpecular;
           CCSurfacesInitializeLightingIntermediateData(lightingData2ndSpecular, surfaceData2ndSpecular);
-          CCSurfacesLightingCalculateIntermediateData_PerLight(lightingData2ndSpecular, surfaceData, cc_lightPos[i].xyz - worldPos);
+          CCSurfacesLightingCalculateIntermediateData_PerLight(lightingData2ndSpecular, surfaceData, lightDirWithLength);
           CCSurfacesLightingCalculateDirect2ndSpecular(lightingResult.direct2ndSpecular, lightingData2ndSpecular, attenuatedLightColorAndIntensity, surfaceData2ndSpecular.intensity2ndSpecular, lightingResult.directSpecular);
           lightingResult.direct2ndSpecular *= multiplier * fresnel;
         #endif
@@ -127,11 +134,11 @@
     {
       vec3 worldPos;
       HIGHP_VALUE_FROM_STRUCT_DEFINED(worldPos, surfaceData.worldPos);
-      
+
       LightingIntermediateData lightingData;
       CCSurfacesInitializeLightingIntermediateData(lightingData, surfaceData);
       CCSurfacesInitializeLightingResult(lightingResult, surfaceData);
-      
+
       CCSurfacesLightingInitializeColorWithLighting(lightingResult.diffuseColorWithLighting, lightingResult.specularColorWithLighting, lightingResult.specularColorWithEnvLighting, surfaceData, lightingData);
 
       CCSurfacesLightingCalculateIntermediateData_PerLight(lightingData, surfaceData, -cc_mainLitDir.xyz);
@@ -173,9 +180,9 @@
       // CCSurfacesLightingCalculateBaked:
       lightingResult.lightmapColor = vec3(0.0);
       #if CC_SURFACES_USE_LIGHT_MAP && !CC_FORWARD_ADD
-		    float lightmapShadow, lightmapAO;
+        float lightmapShadow, lightmapAO;
         GetLightMapColor(lightingResult.lightmapColor, lightmapShadow, lightmapAO, cc_lightingMap, FSInput_lightMapUV.xy, FSInput_lightMapUV.z, surfaceData.worldNormal);
-      
+
         #if CC_SURFACES_USE_LIGHT_MAP == LIGHT_MAP_TYPE_INDIRECT_OCCLUSION
           lightingResult.shadow *= lightmapShadow;
         #endif
@@ -183,19 +190,27 @@
         lightingResult.ao *= lightmapAO;
       #endif
 
+      // apply screen-space shadow and ao
+      // lightingResult.shadow/ao *= XXX;
+      #if CC_USE_DEBUG_VIEW == CC_SURFACES_DEBUG_VIEW_COMPOSITE_AND_MISC
+        if (!IS_DEBUG_VIEW_COMPOSITE_ENABLE_SHADOW)
+          lightingResult.shadow = 1.0;
+        if (!IS_DEBUG_VIEW_COMPOSITE_ENABLE_AO)
+          lightingResult.ao = 1.0;
+      #endif
+
+
       // dynamic & stationary dir light
       lightingResult.directDiffuse = lightingResult.directSpecular = vec3(0.0);
       #if !CC_DISABLE_DIRECTIONAL_LIGHT && !CC_FORWARD_ADD
         CCSurfacesLightingCalculateColorWithLighting(lightingResult.diffuseColorWithLighting, lightingResult.specularColorWithLighting, lightingResult.specularColorWithEnvLighting, surfaceData, lightingData);
-  
+
         CCSurfacesLightingCalculateDirect(lightingResult.directDiffuse, lightingResult.directSpecular, lightingData, cc_mainLitColor);
       #endif
 
       // apply SSR, local probe & global probe
       CCSurfacesLightingCalculateEnvironment(lightingResult.environmentDiffuse, lightingResult.environmentSpecular, lightingData, cc_ambientSky.w);
 
-      // apply screen-space shadow and ao
-      // lightingResult.shadow/ao *= XXX;
 
       #if CC_SURFACES_LIGHTING_USE_FRESNEL
         lightingResult.fresnel = CCSurfaceLightingCalculateFresnel(lightingData);
@@ -205,7 +220,7 @@
         CCSurfacesLightingCalculateDirectTransmitSpecular(lightingResult.directTransmitSpecular, lightingData, cc_mainLitColor);
         CCSurfacesLightingCalculateEnvironmentTransmitSpecular(lightingResult.environmentTransmitSpecular, lightingData, cc_ambientSky.w);
       #endif
-      
+
       #if CC_SURFACES_LIGHTING_TRANSMIT_DIFFUSE
         LightingIntermediateData lightingDataTD;
         CCSurfacesGetLightingIntermediateDataTransmitDiffuse(lightingDataTD, lightingData, surfaceData);

@@ -134,6 +134,7 @@ class SystemInfo extends EventTarget {
             [Feature.WEB_VIEW]: false,
             [Feature.VIDEO_PLAYER]: WECHAT || WECHAT_MINI_PROGRAM || OPPO,
             [Feature.SAFE_AREA]: WECHAT || WECHAT_MINI_PROGRAM || BYTEDANCE,
+            [Feature.HPE]: false,
 
             [Feature.INPUT_TOUCH]: !isPCWechat,
             [Feature.EVENT_KEYBOARD]: isPCWechat,
@@ -144,6 +145,7 @@ class SystemInfo extends EventTarget {
             [Feature.EVENT_HANDLE]: this.isXR,
             [Feature.EVENT_HMD]: this.isXR,
             [Feature.EVENT_HANDHELD]: false,
+            [Feature.WASM]: WECHAT,
         };
 
         this._initPromise = [];

@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import { BUILD, EDITOR } from 'internal:constants';
+import { BUILD, EDITOR, EDITOR_NOT_IN_PREVIEW } from 'internal:constants';
 import { sys, js, misc, path, cclegacy } from '../../core';
 import Cache from './cache';
 import downloadDomImage from './download-dom-image';
@@ -32,7 +32,6 @@ import { files } from './shared';
 import { retry, RetryFunction, urlAppendTimestamp } from './utilities';
 import { IConfigOption } from './config';
 import { CCON, parseCCONJson, decodeCCONBinary } from '../../serialization/ccon';
-import { legacyCC } from '../../core/global-exports';
 
 export type DownloadHandler = (url: string, options: Record<string, any>, onComplete: ((err: Error | null, data?: any | null) => void)) => void;
 
@@ -129,7 +128,7 @@ const downloadBundle = (nameOrUrl: string, options: Record<string, any>, onCompl
     let out: IConfigOption | null = null;
     let error: Error | null = null;
     downloadJson(config, options, (err, response) => {
-        error = err;
+        error = err || error;
         out = response as IConfigOption;
         if (out) { out.base = `${url}/`; }
         if (++count === 2) {
@@ -139,9 +138,9 @@ const downloadBundle = (nameOrUrl: string, options: Record<string, any>, onCompl
 
     const jspath = `${url}/index.${version ? `${version}.` : ''}js`;
     downloadScript(jspath, options, (err) => {
-        error = err;
+        error = err || error;
         if (++count === 2) {
-            onComplete(err, out);
+            onComplete(error, out);
         }
     });
 };
@@ -174,7 +173,7 @@ export class Downloader {
      * @zh
      * 下载时的最大并发数。
      */
-    public maxConcurrency = 6;
+    public maxConcurrency = 15;
 
     /**
      * @en
@@ -184,7 +183,7 @@ export class Downloader {
      * 下载时每帧可以启动的最大请求数。
      *
      */
-    public maxRequestsPerFrame = 6;
+    public maxRequestsPerFrame = 15;
 
     /**
      * @en
@@ -214,12 +213,12 @@ export class Downloader {
      * You don't need to change it at runtime.
      * @internal
      */
-    public appendTimeStamp = !!(EDITOR && !legacyCC.GAME_VIEW);
+    public appendTimeStamp = !!EDITOR_NOT_IN_PREVIEW;
 
     /**
      * @engineInternal
      */
-    public limited = !(EDITOR && !legacyCC.GAME_VIEW);
+    public limited = !EDITOR;
 
     /**
      * @en

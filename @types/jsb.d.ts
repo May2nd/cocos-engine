@@ -119,6 +119,7 @@ declare namespace jsb {
         repeat: boolean;
         keyCode: number;
         windowId: number;
+        code: string;
     }
     type KeyboardEventCallback = (keyboardEvent: KeyboardEvent) => void;
     export let onKeyDown: KeyboardEventCallback | undefined;
@@ -363,3 +364,9 @@ declare namespace ns {
     export class Frustum extends jsb.NativePOD {
     }
 }
+
+/**
+ * Only defined on native platforms.
+ * Now we only support 'V8'
+ */
+declare const scriptEngineType: 'V8';

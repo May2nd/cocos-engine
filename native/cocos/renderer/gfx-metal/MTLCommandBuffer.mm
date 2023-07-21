@@ -39,6 +39,7 @@
 #import "MTLSemaphore.h"
 #import "MTLSwapchain.h"
 #import "MTLTexture.h"
+#import "MTLShader.h"
 #import "TargetConditionals.h"
 #import "profiler/Profiler.h"
 #import "base/Log.h"
@@ -265,11 +266,6 @@ void CCMTLCommandBuffer::beginRenderPass(RenderPass *renderPass, Framebuffer *fb
                     mtlRenderPassDescriptor.colorAttachments[color].resolveDepthPlane = 0;
                     mtlRenderPassDescriptor.colorAttachments[color].storeAction = MTLStoreActionMultisampleResolve;
                 }
-            }
-
-            for (size_t j = 0; j < subpasses[i].preserves.size(); ++j) {
-                uint32_t preserves = subpasses[i].preserves[j];
-                mtlRenderPassDescriptor.colorAttachments[preserves].storeAction = MTLStoreActionStoreAndMultisampleResolve;
             }
         }
         updateDepthStencilState(ccMtlRenderPass->getCurrentSubpassIndex(), mtlRenderPassDescriptor);
@@ -1038,12 +1034,15 @@ void CCMTLCommandBuffer::dispatch(const DispatchInfo &info) {
         bindDescriptorSets();
     }
     MTLSize groupsPerGrid = MTLSizeMake(info.groupCountX, info.groupCountY, info.groupCountZ);
+    auto* ccShader = static_cast<CCMTLShader*>(_gpuCommandBufferObj->pipelineState->getShader());
+    const auto& groupSize = ccShader->gpuShader(nullptr, 0)->workGroupSize;
+    MTLSize workGroupSize = MTLSizeMake(groupSize[0], groupSize[1], groupSize[2]);
     if (info.indirectBuffer) {
         auto* ccBuffer = static_cast<CCMTLBuffer *>(info.indirectBuffer);
         // offset: [dispatch offset] + [backbuffer offset]
-        _computeEncoder.dispatch(ccBuffer->mtlBuffer(), info.indirectOffset + ccBuffer->currentOffset(), groupsPerGrid);
+        _computeEncoder.dispatch(ccBuffer->mtlBuffer(), info.indirectOffset + ccBuffer->currentOffset(), workGroupSize);
     } else {
-        _computeEncoder.dispatch(groupsPerGrid);
+        _computeEncoder.dispatch(groupsPerGrid, workGroupSize);
     }
     _computeEncoder.endEncoding();
 }

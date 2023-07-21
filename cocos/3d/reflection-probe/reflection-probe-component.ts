@@ -21,14 +21,14 @@
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE.
 */
-import { ccclass, executeInEditMode, menu, playOnFocus, serializable, tooltip, type, visible } from 'cc.decorator';
-import { EDITOR } from 'internal:constants';
-import { CCBoolean, cclegacy, CCObject, Color, Enum, size, Vec3 } from '../../core';
+import { ccclass, executeInEditMode, help, menu, playOnFocus, serializable, tooltip, type, visible } from 'cc.decorator';
+import { EDITOR, EDITOR_NOT_IN_PREVIEW } from 'internal:constants';
+import { CCBoolean, CCObject, Color, Enum, Vec3 } from '../../core';
 
 import { TextureCube } from '../../asset/assets';
 import { scene } from '../../render-scene';
 import { CAMERA_DEFAULT_MASK } from '../../rendering/define';
-import { ReflectionProbeManager } from '../../rendering/reflection-probe-manager';
+import { ReflectionProbeManager } from './reflection-probe-manager';
 import { Component } from '../../scene-graph/component';
 import { Layers } from '../../scene-graph/layers';
 import { Camera } from '../../misc/camera-component';
@@ -62,6 +62,7 @@ export enum ProbeResolution {
 @menu('Rendering/ReflectionProbe')
 @executeInEditMode
 @playOnFocus
+@help('i18n:cc.ReflectionProbe')
 export class ReflectionProbe extends Component {
     protected static readonly DEFAULT_CUBE_SIZE: Readonly<Vec3> =  new Vec3(1, 1, 1);
     protected static readonly DEFAULT_PLANER_SIZE: Readonly<Vec3> =  new Vec3(5, 0.5, 5);
@@ -265,6 +266,10 @@ export class ReflectionProbe extends Component {
         ReflectionProbeManager.probeManager.onUpdateProbes(true);
     }
 
+    get cubemap () {
+        return this._cubemap;
+    }
+
     get probe () {
         return this._probe!;
     }
@@ -273,7 +278,7 @@ export class ReflectionProbe extends Component {
      * @en Reflection probe cube mode preview sphere
      * @zh 反射探针cube模式的预览小球
      */
-    set previewSphere (val: Node) {
+    set previewSphere (val: Node | null) {
         this._previewSphere = val;
         if (this.probe) {
             this.probe.previewSphere = val;
@@ -345,7 +350,7 @@ export class ReflectionProbe extends Component {
 
     public update (dt: number) {
         if (!this.probe) return;
-        if (EDITOR && !cclegacy.GAME_VIEW) {
+        if (EDITOR_NOT_IN_PREVIEW) {
             if (this.probeType === ProbeType.PLANAR) {
                 const cameraLst: scene.Camera[] | undefined = this.node.scene.renderScene?.cameras;
                 if (cameraLst !== undefined) {

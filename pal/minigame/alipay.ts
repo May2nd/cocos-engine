@@ -24,12 +24,11 @@
 
 import { IMiniGame } from 'pal/minigame';
 import { Orientation } from '../screen-adapter/enum-type';
-import { cloneObject } from '../utils';
+import { cloneObject, createInnerAudioContextPolyfill } from '../utils';
 
 declare let my: any;
 
-// @ts-expect-error can't init minigame when it's declared
-const minigame: IMiniGame = {};
+const minigame: IMiniGame = {} as IMiniGame;
 cloneObject(minigame, my);
 
 // #region SystemInfo
@@ -79,25 +78,25 @@ minigame.onTouchCancel = function (cb) {
 };
 // #endregion TouchEvent
 
-minigame.createInnerAudioContext = function (): InnerAudioContext {
-    const audio: InnerAudioContext = my.createInnerAudioContext();
-    // @ts-expect-error InnerAudioContext has onCanPlay
-    audio.onCanplay = audio.onCanPlay.bind(audio);
-    // @ts-expect-error InnerAudioContext has offCanPlay
-    audio.offCanplay = audio.offCanPlay.bind(audio);
-    // @ts-expect-error InnerAudioContext has onCanPlay
-    delete audio.onCanPlay;
-    // @ts-expect-error InnerAudioContext has offCanPlay
-    delete audio.offCanPlay;
-    return audio;
-};
+// #region Audio
+const polyfilledCreateInnerAudio = createInnerAudioContextPolyfill(my, {
+    onPlay: true,  // Fix: onPlay can not be executed at Alipay(Override onPlay method).
+    onPause: true,  // Fix: calling pause twice, onPause won't execute twice.(Override onPause method)
+    onStop: false,
+    onSeek: false,
+}, true);
 
-// #region Font
-minigame.loadFont = function (url) {
-    // my.loadFont crash when url is not in user data path
-    return 'Arial';
+// eslint-disable-next-line func-names
+minigame.createInnerAudioContext = function (): InnerAudioContext {
+    // NOTE: `onCanPlay` and `offCanPlay` is not standard minigame interface,
+    // so here we mark audio as type of any
+    const audio: any = polyfilledCreateInnerAudio();
+    audio.onCanplay = audio.onCanPlay.bind(audio);
+    audio.offCanplay = audio.offCanPlay.bind(audio);
+    delete audio.onCanPlay;
+    delete audio.offCanPlay;
+    return audio as InnerAudioContext;
 };
-// #endregion Font
 
 // #region Accelerometer
 let _accelerometerCb: AccelerometerChangeCallback | undefined;

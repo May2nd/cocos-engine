@@ -18,6 +18,7 @@ CCEffect %{
         metallicMap:          { value: grey }
         occlusion:            { value: 0.0, editor: { slide: true, range: [0, 1.0], step: 0.001 } }
         occlusionMap:         { value: white }
+        specularIntensity:    { value: 0.5, editor: { slide: true, range: [0, 1.0], step: 0.001 } }
         emissiveScale:        { value: 1.0 }
         emissiveScaleMap:     { value: grey }
         emissive:             { value: [0.0, 0.0, 0.0, 1.0], linear: true, editor: { displayName: EmissiveColor, type: color} }
@@ -59,15 +60,20 @@ CCEffect %{
         mainTexture:    { value: grey, target: albedoMap, editor: { displayName: AlbedoMap } }
         alphaSource:    { value: 1.0, editor: { slide: true, range: [0, 1.0], step: 0.001 } }
         alphaSourceMap: { value: grey, editor: { parent: USE_OPACITY_MAP } }
+    - &deferred-forward
+      vert: standard-vs
+      frag: standard-fs
+      propertyIndex: 0
+      phase: deferred-forward
   - name: transparent
     passes:
     - vert: standard-vs
       frag: standard-fs
       embeddedMacros: { CC_FORCE_FORWARD_SHADING: true }
-      depthStencilState:
+      depthStencilState: &d1
         depthTest: true
         depthWrite: false
-      blendState:
+      blendState: &b1
         targets:
         - blend: true
           blendSrc: src_alpha
@@ -76,6 +82,14 @@ CCEffect %{
       properties: *props
     - *forward-add
     - *shadow-caster
+    - &deferred-forward
+      vert: standard-vs
+      frag: standard-fs
+      phase: deferred-forward
+      embeddedMacros: { CC_PIPELINE_TYPE: 0 }
+      depthStencilState: *d1
+      blendState: *b1
+      propertyIndex: 0
 }%
 
 CCProgram shared-ubos %{
@@ -91,6 +105,7 @@ CCProgram shared-ubos %{
     float normalStrength;
     float alphaSource;
     float albedoScale;
+    float specularIntensity;
   };
 }%
 
@@ -282,7 +297,7 @@ CCProgram surface-fragment %{
     #else
         emissiveColor.rgb *= emissiveScale;
     #endif
-    
+
     return emissiveColor.rgb;
   }
 
@@ -295,7 +310,7 @@ CCProgram surface-fragment %{
     #if USE_OCCLUSION_MAP
        vec4 occlusionColor = texture(occlusionMap, TEXTURE_UV);
        float occlusionColorValue = discolor(occlusionColor.rgb);
-       #if USE_OCCLUSION_CHANNEL 
+       #if USE_OCCLUSION_CHANNEL
            occlusionColor.rgb = SRGBToLinear(occlusionColor.rgb);
            occlusionColorValue = occlusionColor.OCCLUSION_CHANNEL;
        #endif
@@ -308,7 +323,7 @@ CCProgram surface-fragment %{
     #if USE_ROUGHNESS_MAP
        vec4 roughnessColor = texture(roughnessMap, TEXTURE_UV);
        roughnessValue = discolor(roughnessColor.rgb);
-       #if USE_ROUGHNESS_CHANNEL 
+       #if USE_ROUGHNESS_CHANNEL
            roughnessColor.rgb = SRGBToLinear(roughnessColor.rgb);
            roughnessValue = roughnessColor.ROUGHNESS_CHANNEL;
        #endif
@@ -321,7 +336,7 @@ CCProgram surface-fragment %{
     #if USE_METALLIC_MAP
        vec4 metallicColor = texture(metallicMap, TEXTURE_UV);
        metallicValue = discolor(metallicColor.rgb);
-       #if USE_METALLIC_CHANNEL 
+       #if USE_METALLIC_CHANNEL
            metallicColor.rgb = SRGBToLinear(metallicColor.rgb);
            metallicValue = metallicColor.METALLIC_CHANNEL;
        #endif
@@ -329,7 +344,7 @@ CCProgram surface-fragment %{
     pbr.z = metallicValue;
 
     //specularIntensity
-    pbr.w = 0.5;
+    pbr.w = specularIntensity;
     return pbr;
   }
 }%
@@ -359,6 +374,7 @@ CCProgram standard-vs %{
 
 CCProgram shadow-caster-vs %{
   precision highp float;
+  #include <macro-remapping>
   #include <surfaces/effect-macros/render-to-shadowmap>
   #include <surfaces/includes/common-vs>
   #include <shared-ubos>
@@ -399,6 +415,7 @@ CCProgram standard-fs %{
 
 CCProgram shadow-caster-fs %{
   precision highp float;
+  #include <macro-remapping>
   #include <surfaces/effect-macros/render-to-shadowmap>
   #include <surfaces/includes/common-fs>
   #include <shared-ubos>

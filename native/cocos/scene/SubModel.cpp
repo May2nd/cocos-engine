@@ -92,7 +92,7 @@ void SubModel::update() {
     }
 }
 
-void SubModel::setPasses(const std::shared_ptr<ccstd::vector<IntrusivePtr<Pass>>> &pPasses) {
+void SubModel::setPasses(const SharedPassArray &pPasses) {
     if (!pPasses || pPasses->size() > MAX_PASS_COUNT) {
         debug::errorID(12004, MAX_PASS_COUNT);
         return;
@@ -102,9 +102,6 @@ void SubModel::setPasses(const std::shared_ptr<ccstd::vector<IntrusivePtr<Pass>>
     flushPassInfo();
 
     const auto &passes = *_passes;
-    if (passes[0]->getBatchingScheme() == BatchingSchemes::VB_MERGING) {
-        _subMesh->genFlatBuffers();
-    }
     // DS layout might change too
     if (_descriptorSet) {
         _descriptorSet->destroy();
@@ -131,7 +128,7 @@ Pass *SubModel::getPass(uint32_t index) const {
     return passes[index];
 }
 
-void SubModel::initialize(RenderingSubMesh *subMesh, const std::shared_ptr<ccstd::vector<IntrusivePtr<Pass>>> &pPasses, const ccstd::vector<IMacroPatch> &patches) {
+void SubModel::initialize(RenderingSubMesh *subMesh, const SharedPassArray &pPasses, const ccstd::vector<IMacroPatch> &patches) {
     _device = Root::getInstance()->getDevice();
     CC_ASSERT(!pPasses->empty());
     gfx::DescriptorSetInfo dsInfo;
@@ -148,15 +145,14 @@ void SubModel::initialize(RenderingSubMesh *subMesh, const std::shared_ptr<ccstd
     }
 
     _subMesh = subMesh;
-    _patches = patches;
+    ccstd::vector<IMacroPatch> tmp = patches;
+    std::sort(tmp.begin(), tmp.end(), IMacroPatch::compare);
+    _patches = tmp;
     _passes = pPasses;
 
     flushPassInfo();
 
     const auto &passes = *_passes;
-    if (passes[0]->getBatchingScheme() == BatchingSchemes::VB_MERGING) {
-        subMesh->genFlatBuffers();
-    }
     _priority = pipeline::RenderPriority::DEFAULT;
 
     // initialize resources for reflection material
@@ -195,32 +191,6 @@ void SubModel::initialize(RenderingSubMesh *subMesh, const std::shared_ptr<ccstd
     }
 }
 
-// TODO():
-// This is a temporary solution
-// It should not be written in a fixed way, or modified by the user
-void SubModel::initPlanarShadowShader() {
-    const auto *pipeline = Root::getInstance()->getPipeline();
-    Shadows *shadowInfo = pipeline->getPipelineSceneData()->getShadows();
-    if (shadowInfo != nullptr) {
-        _planarShader = shadowInfo->getPlanarShader(_patches);
-    } else {
-        _planarShader = nullptr;
-    }
-}
-
-// TODO():
-// This is a temporary solution
-// It should not be written in a fixed way, or modified by the user
-void SubModel::initPlanarShadowInstanceShader() {
-    const auto *pipeline = Root::getInstance()->getPipeline();
-    Shadows *shadowInfo = pipeline->getPipelineSceneData()->getShadows();
-    if (shadowInfo != nullptr) {
-        _planarInstanceShader = shadowInfo->getPlanarInstanceShader(_patches);
-    } else {
-        _planarInstanceShader = nullptr;
-    }
-}
-
 void SubModel::destroy() {
     CC_SAFE_DESTROY_NULL(_descriptorSet);
     CC_SAFE_DESTROY_NULL(_inputAssembler);
@@ -250,7 +220,16 @@ void SubModel::onPipelineStateChanged() {
 }
 
 void SubModel::onMacroPatchesStateChanged(const ccstd::vector<IMacroPatch> &patches) {
-    _patches = patches;
+    if (patches.empty() && _patches.empty()) {
+        return;
+    }
+
+    ccstd::vector<IMacroPatch> tmp = patches;
+    std::sort(tmp.begin(), tmp.end(), IMacroPatch::compare);
+    if (std::equal(std::begin(tmp), std::end(tmp), std::begin(_patches), std::end(_patches))) {
+        return;
+    }
+    _patches = tmp;
     const auto &passes = *_passes;
     if (passes.empty()) return;
     for (Pass *pass : passes) {
@@ -365,9 +344,6 @@ void SubModel::setSubMesh(RenderingSubMesh *subMesh) {
     const auto &passes = *_passes;
     _inputAssembler->destroy();
     _inputAssembler->initialize(subMesh->getIaInfo());
-    if (passes[0]->getBatchingScheme() == BatchingSchemes::VB_MERGING) {
-        subMesh->genFlatBuffers();
-    }
     _subMesh = subMesh;
 }
 

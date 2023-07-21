@@ -185,6 +185,7 @@ export class PipelineUBO {
 
         cv[UBOCamera.NEAR_FAR_OFFSET] = camera.nearClip;
         cv[UBOCamera.NEAR_FAR_OFFSET + 1] = camera.farClip;
+        cv[UBOCamera.NEAR_FAR_OFFSET + 2] = camera.getClipSpaceMinz();
 
         cv[UBOCamera.VIEW_PORT_OFFSET] = sceneData.shadingScale * camera.window.width * camera.viewport.x;
         cv[UBOCamera.VIEW_PORT_OFFSET + 1] = sceneData.shadingScale * camera.window.height * camera.viewport.y;
@@ -264,7 +265,7 @@ export class PipelineUBO {
                         _vec4ShadowInfo.set(near, far, 0, 1.0 - mainLight.shadowSaturation);
                         Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_NEAR_FAR_LINEAR_SATURATION_INFO_OFFSET);
 
-                        _vec4ShadowInfo.set(0, packing, mainLight.shadowNormalBias, levelCount);
+                        _vec4ShadowInfo.set(LightType.DIRECTIONAL, packing, mainLight.shadowNormalBias, levelCount);
                         Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET);
                     } else {
                         const layerThreshold = this.getPCFRadius(shadowInfo, mainLight);
@@ -301,7 +302,7 @@ export class PipelineUBO {
                         _vec4ShadowInfo.set(0.1, mainLight.shadowDistance, 0, 1.0 - mainLight.shadowSaturation);
                         Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_NEAR_FAR_LINEAR_SATURATION_INFO_OFFSET);
 
-                        _vec4ShadowInfo.set(0.0, packing, mainLight.shadowNormalBias, mainLight.csmLevel);
+                        _vec4ShadowInfo.set(LightType.DIRECTIONAL, packing, mainLight.shadowNormalBias, mainLight.csmLevel);
                         Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET);
                     }
                     _vec4ShadowInfo.set(shadowInfo.size.x, shadowInfo.size.y, mainLight.shadowPcf, mainLight.shadowBias);
@@ -349,7 +350,7 @@ export class PipelineUBO {
                             far = csmLayers.specialLayer.shadowCameraFar;
                             levelCount = 1;
                         }
-                        _vec4ShadowInfo.set(0.0, packing, mainLight.shadowNormalBias, 0);
+                        _vec4ShadowInfo.set(LightType.DIRECTIONAL, packing, mainLight.shadowNormalBias, 0);
                         Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET);
                     } else {
                         const layer = csmLayers.layers[level];
@@ -379,7 +380,7 @@ export class PipelineUBO {
                     _vec4ShadowInfo.set(near, far, 0, 1.0 - mainLight.shadowSaturation);
                     Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_NEAR_FAR_LINEAR_SATURATION_INFO_OFFSET);
 
-                    _vec4ShadowInfo.set(0.0, packing, mainLight.shadowNormalBias, levelCount);
+                    _vec4ShadowInfo.set(LightType.DIRECTIONAL, packing, mainLight.shadowNormalBias, levelCount);
                     Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET);
 
                     _vec4ShadowInfo.set(shadowInfo.size.x, shadowInfo.size.y, mainLight.shadowPcf, mainLight.shadowBias);
@@ -406,7 +407,7 @@ export class PipelineUBO {
                 _vec4ShadowInfo.set(shadowInfo.size.x, shadowInfo.size.y, spotLight.shadowPcf, spotLight.shadowBias);
                 Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_WIDTH_HEIGHT_PCF_BIAS_INFO_OFFSET);
 
-                _vec4ShadowInfo.set(1.0, packing, spotLight.shadowNormalBias, 0.0);
+                _vec4ShadowInfo.set(LightType.SPOT, packing, spotLight.shadowNormalBias, 0.0);
                 Vec4.toArray(sv, _vec4ShadowInfo, UBOShadow.SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET);
             }
             break;

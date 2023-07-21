@@ -32,6 +32,7 @@
 #include "base/std/container/map.h"
 #include "cocos/base/Ptr.h"
 #include "cocos/base/std/container/string.h"
+#include "cocos/base/std/hash/hash.h"
 #include "cocos/renderer/gfx-base/GFXFramebuffer.h"
 #include "cocos/renderer/gfx-base/GFXRenderPass.h"
 #include "cocos/renderer/pipeline/GlobalDescriptorSetManager.h"
@@ -42,8 +43,8 @@
 #include "cocos/renderer/pipeline/custom/details/Set.h"
 
 #ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4250)
+    #pragma warning(push)
+    #pragma warning(disable: 4250)
 #endif
 
 namespace cc {
@@ -96,9 +97,26 @@ public:
     uint32_t layoutID{LayoutGraphData::null_vertex()};
 };
 
-class NativeRasterQueueBuilder final : public RasterQueueBuilder, public NativeSetter {
+class NativeRenderSubpassBuilderImpl : public NativeSetter {
 public:
-    NativeRasterQueueBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn, const LayoutGraphData* layoutGraphIn, uint32_t layoutIDIn) noexcept
+    NativeRenderSubpassBuilderImpl(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn, const LayoutGraphData* layoutGraphIn, uint32_t layoutIDIn)
+    : NativeSetter(pipelineRuntimeIn, renderGraphIn, nodeIDIn, layoutGraphIn, layoutIDIn) {}
+
+    void addRenderTarget(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, const gfx::Color &color) /*implements*/;
+    void addDepthStencil(const ccstd::string &name, AccessType accessType, const ccstd::string &depthSlotName, const ccstd::string &stencilSlotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, float depth, uint8_t stencil, gfx::ClearFlagBit clearFlags) /*implements*/;
+    void addTexture(const ccstd::string &name, const ccstd::string &slotName, gfx::Sampler *sampler, uint32_t plane) /*implements*/;
+    void addStorageBuffer(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) /*implements*/;
+    void addStorageImage(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) /*implements*/;
+    void setViewport(const gfx::Viewport &viewport) /*implements*/;
+    RenderQueueBuilder *addQueue(QueueHint hint, const ccstd::string &phaseName) /*implements*/;
+    bool getShowStatistics() const /*implements*/;
+    void setShowStatistics(bool enable) /*implements*/;
+    void setCustomShaderStages(const ccstd::string &name, gfx::ShaderStageFlagBit stageFlags) /*implements*/;
+};
+
+class NativeRenderQueueBuilder final : public RenderQueueBuilder, public NativeSetter {
+public:
+    NativeRenderQueueBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn, const LayoutGraphData* layoutGraphIn, uint32_t layoutIDIn) noexcept
     : NativeSetter(pipelineRuntimeIn, renderGraphIn, nodeIDIn, layoutGraphIn, layoutIDIn) {}
 
     ccstd::string getName() const override {
@@ -149,7 +167,6 @@ public:
     }
 
     void addSceneOfCamera(scene::Camera *camera, LightInfo light, SceneFlags sceneFlags) override;
-    void addScene(const ccstd::string &name, SceneFlags sceneFlags) override;
     void addFullscreenQuad(Material *material, uint32_t passID, SceneFlags sceneFlags) override;
     void addCameraQuad(scene::Camera *camera, Material *material, uint32_t passID, SceneFlags sceneFlags) override;
     void clearRenderTarget(const ccstd::string &name, const gfx::Color &color) override;
@@ -157,10 +174,10 @@ public:
     void addCustomCommand(std::string_view customBehavior) override;
 };
 
-class NativeRasterSubpassBuilder final : public RasterSubpassBuilder, public NativeSetter {
+class NativeRenderSubpassBuilder final : public RenderSubpassBuilder, public NativeRenderSubpassBuilderImpl {
 public:
-    NativeRasterSubpassBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn, const LayoutGraphData* layoutGraphIn, uint32_t layoutIDIn) noexcept
-    : NativeSetter(pipelineRuntimeIn, renderGraphIn, nodeIDIn, layoutGraphIn, layoutIDIn) {}
+    NativeRenderSubpassBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn, const LayoutGraphData* layoutGraphIn, uint32_t layoutIDIn) noexcept
+    : NativeRenderSubpassBuilderImpl(pipelineRuntimeIn, renderGraphIn, nodeIDIn, layoutGraphIn, layoutIDIn) {}
 
     ccstd::string getName() const override {
         return NativeRenderNode::getName();
@@ -209,16 +226,123 @@ public:
         NativeSetter::setSampler(name, sampler);
     }
 
-    void addRenderTarget(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, const gfx::Color &color) override;
-    void addDepthStencil(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, float depth, uint8_t stencil, gfx::ClearFlagBit clearFlags) override;
-    void addTexture(const ccstd::string &name, const ccstd::string &slotName) override;
-    void addStorageBuffer(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
-    void addStorageImage(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
-    void addComputeView(const ccstd::string &name, const ComputeView &view) override;
-    void setViewport(const gfx::Viewport &viewport) override;
-    RasterQueueBuilder *addQueue(QueueHint hint, const ccstd::string &layoutName) override;
-    bool getShowStatistics() const override;
-    void setShowStatistics(bool enable) override;
+    void addRenderTarget(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, const gfx::Color &color) override {
+        NativeRenderSubpassBuilderImpl::addRenderTarget(name, accessType, slotName, loadOp, storeOp, color);
+    }
+    void addDepthStencil(const ccstd::string &name, AccessType accessType, const ccstd::string &depthSlotName, const ccstd::string &stencilSlotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, float depth, uint8_t stencil, gfx::ClearFlagBit clearFlags) override {
+        NativeRenderSubpassBuilderImpl::addDepthStencil(name, accessType, depthSlotName, stencilSlotName, loadOp, storeOp, depth, stencil, clearFlags);
+    }
+    void addTexture(const ccstd::string &name, const ccstd::string &slotName, gfx::Sampler *sampler, uint32_t plane) override {
+        NativeRenderSubpassBuilderImpl::addTexture(name, slotName, sampler, plane);
+    }
+    void addStorageBuffer(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override {
+        NativeRenderSubpassBuilderImpl::addStorageBuffer(name, accessType, slotName);
+    }
+    void addStorageImage(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override {
+        NativeRenderSubpassBuilderImpl::addStorageImage(name, accessType, slotName);
+    }
+    void setViewport(const gfx::Viewport &viewport) override {
+        NativeRenderSubpassBuilderImpl::setViewport(viewport);
+    }
+    RenderQueueBuilder *addQueue(QueueHint hint, const ccstd::string &phaseName) override {
+        return NativeRenderSubpassBuilderImpl::addQueue(hint, phaseName);
+    }
+    bool getShowStatistics() const override {
+        return NativeRenderSubpassBuilderImpl::getShowStatistics();
+    }
+    void setShowStatistics(bool enable) override {
+        NativeRenderSubpassBuilderImpl::setShowStatistics(enable);
+    }
+    void setCustomShaderStages(const ccstd::string &name, gfx::ShaderStageFlagBit stageFlags) override {
+        NativeRenderSubpassBuilderImpl::setCustomShaderStages(name, stageFlags);
+    }
+};
+
+class NativeMultisampleRenderSubpassBuilder final : public MultisampleRenderSubpassBuilder, public NativeRenderSubpassBuilderImpl {
+public:
+    NativeMultisampleRenderSubpassBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn, const LayoutGraphData* layoutGraphIn, uint32_t layoutIDIn) noexcept
+    : NativeRenderSubpassBuilderImpl(pipelineRuntimeIn, renderGraphIn, nodeIDIn, layoutGraphIn, layoutIDIn) {}
+
+    ccstd::string getName() const override {
+        return NativeRenderNode::getName();
+    }
+    void setName(const ccstd::string &name) override {
+        NativeRenderNode::setName(name);
+    }
+    void setCustomBehavior(const ccstd::string &name) override {
+        NativeRenderNode::setCustomBehavior(name);
+    }
+
+    void setMat4(const ccstd::string &name, const Mat4 &mat) override {
+        NativeSetter::setMat4(name, mat);
+    }
+    void setQuaternion(const ccstd::string &name, const Quaternion &quat) override {
+        NativeSetter::setQuaternion(name, quat);
+    }
+    void setColor(const ccstd::string &name, const gfx::Color &color) override {
+        NativeSetter::setColor(name, color);
+    }
+    void setVec4(const ccstd::string &name, const Vec4 &vec) override {
+        NativeSetter::setVec4(name, vec);
+    }
+    void setVec2(const ccstd::string &name, const Vec2 &vec) override {
+        NativeSetter::setVec2(name, vec);
+    }
+    void setFloat(const ccstd::string &name, float v) override {
+        NativeSetter::setFloat(name, v);
+    }
+    void setArrayBuffer(const ccstd::string &name, const ArrayBuffer *arrayBuffer) override {
+        NativeSetter::setArrayBuffer(name, arrayBuffer);
+    }
+    void setBuffer(const ccstd::string &name, gfx::Buffer *buffer) override {
+        NativeSetter::setBuffer(name, buffer);
+    }
+    void setTexture(const ccstd::string &name, gfx::Texture *texture) override {
+        NativeSetter::setTexture(name, texture);
+    }
+    void setReadWriteBuffer(const ccstd::string &name, gfx::Buffer *buffer) override {
+        NativeSetter::setReadWriteBuffer(name, buffer);
+    }
+    void setReadWriteTexture(const ccstd::string &name, gfx::Texture *texture) override {
+        NativeSetter::setReadWriteTexture(name, texture);
+    }
+    void setSampler(const ccstd::string &name, gfx::Sampler *sampler) override {
+        NativeSetter::setSampler(name, sampler);
+    }
+
+    void addRenderTarget(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, const gfx::Color &color) override {
+        NativeRenderSubpassBuilderImpl::addRenderTarget(name, accessType, slotName, loadOp, storeOp, color);
+    }
+    void addDepthStencil(const ccstd::string &name, AccessType accessType, const ccstd::string &depthSlotName, const ccstd::string &stencilSlotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, float depth, uint8_t stencil, gfx::ClearFlagBit clearFlags) override {
+        NativeRenderSubpassBuilderImpl::addDepthStencil(name, accessType, depthSlotName, stencilSlotName, loadOp, storeOp, depth, stencil, clearFlags);
+    }
+    void addTexture(const ccstd::string &name, const ccstd::string &slotName, gfx::Sampler *sampler, uint32_t plane) override {
+        NativeRenderSubpassBuilderImpl::addTexture(name, slotName, sampler, plane);
+    }
+    void addStorageBuffer(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override {
+        NativeRenderSubpassBuilderImpl::addStorageBuffer(name, accessType, slotName);
+    }
+    void addStorageImage(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override {
+        NativeRenderSubpassBuilderImpl::addStorageImage(name, accessType, slotName);
+    }
+    void setViewport(const gfx::Viewport &viewport) override {
+        NativeRenderSubpassBuilderImpl::setViewport(viewport);
+    }
+    RenderQueueBuilder *addQueue(QueueHint hint, const ccstd::string &phaseName) override {
+        return NativeRenderSubpassBuilderImpl::addQueue(hint, phaseName);
+    }
+    bool getShowStatistics() const override {
+        return NativeRenderSubpassBuilderImpl::getShowStatistics();
+    }
+    void setShowStatistics(bool enable) override {
+        NativeRenderSubpassBuilderImpl::setShowStatistics(enable);
+    }
+    void setCustomShaderStages(const ccstd::string &name, gfx::ShaderStageFlagBit stageFlags) override {
+        NativeRenderSubpassBuilderImpl::setCustomShaderStages(name, stageFlags);
+    }
+
+    void resolveRenderTarget(const ccstd::string &source, const ccstd::string &target) override;
+    void resolveDepthStencil(const ccstd::string &source, const ccstd::string &target, gfx::ResolveMode depthMode, gfx::ResolveMode stencilMode) override;
 };
 
 class NativeComputeSubpassBuilder final : public ComputeSubpassBuilder, public NativeSetter {
@@ -274,16 +398,16 @@ public:
     }
 
     void addRenderTarget(const ccstd::string &name, const ccstd::string &slotName) override;
-    void addTexture(const ccstd::string &name, const ccstd::string &slotName) override;
+    void addTexture(const ccstd::string &name, const ccstd::string &slotName, gfx::Sampler *sampler, uint32_t plane) override;
     void addStorageBuffer(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
     void addStorageImage(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
-    void addComputeView(const ccstd::string &name, const ComputeView &view) override;
-    ComputeQueueBuilder *addQueue(const ccstd::string &layoutName) override;
+    ComputeQueueBuilder *addQueue(const ccstd::string &phaseName) override;
+    void setCustomShaderStages(const ccstd::string &name, gfx::ShaderStageFlagBit stageFlags) override;
 };
 
-class NativeRasterPassBuilder final : public RasterPassBuilder, public NativeSetter {
+class NativeRenderPassBuilder final : public RenderPassBuilder, public NativeSetter {
 public:
-    NativeRasterPassBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn, const LayoutGraphData* layoutGraphIn, uint32_t layoutIDIn) noexcept
+    NativeRenderPassBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn, const LayoutGraphData* layoutGraphIn, uint32_t layoutIDIn) noexcept
     : NativeSetter(pipelineRuntimeIn, renderGraphIn, nodeIDIn, layoutGraphIn, layoutIDIn) {}
 
     ccstd::string getName() const override {
@@ -333,20 +457,22 @@ public:
         NativeSetter::setSampler(name, sampler);
     }
 
-    void addRenderTarget(const ccstd::string &name, const ccstd::string &slotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, const gfx::Color &color) override;
-    void addDepthStencil(const ccstd::string &name, const ccstd::string &slotName, gfx::LoadOp loadOp, gfx::StoreOp storeOp, float depth, uint8_t stencil, gfx::ClearFlagBit clearFlags) override;
-    void addTexture(const ccstd::string &name, const ccstd::string &slotName) override;
-    void addStorageBuffer(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
-    void addStorageImage(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
-    void addRasterView(const ccstd::string &name, const RasterView &view) override;
-    void addComputeView(const ccstd::string &name, const ComputeView &view) override;
-    RasterQueueBuilder *addQueue(QueueHint hint, const ccstd::string &layoutName) override;
-    RasterSubpassBuilder *addRasterSubpass(const ccstd::string &layoutName) override;
-    ComputeSubpassBuilder *addComputeSubpass(const ccstd::string &layoutName) override;
+    void addRenderTarget(const ccstd::string &name, gfx::LoadOp loadOp, gfx::StoreOp storeOp, const gfx::Color &color) override;
+    void addDepthStencil(const ccstd::string &name, gfx::LoadOp loadOp, gfx::StoreOp storeOp, float depth, uint8_t stencil, gfx::ClearFlagBit clearFlags) override;
+    void addTexture(const ccstd::string &name, const ccstd::string &slotName, gfx::Sampler *sampler, uint32_t plane) override;
+    RenderQueueBuilder *addQueue(QueueHint hint, const ccstd::string &phaseName) override;
     void setViewport(const gfx::Viewport &viewport) override;
     void setVersion(const ccstd::string &name, uint64_t version) override;
     bool getShowStatistics() const override;
     void setShowStatistics(bool enable) override;
+
+    void addStorageBuffer(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
+    void addStorageImage(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
+    void addMaterialTexture(const ccstd::string &resourceName, gfx::ShaderStageFlagBit flags) override;
+    RenderSubpassBuilder *addRenderSubpass(const ccstd::string &subpassName) override;
+    MultisampleRenderSubpassBuilder *addMultisampleRenderSubpass(uint32_t count, uint32_t quality, const ccstd::string &subpassName) override;
+    ComputeSubpassBuilder *addComputeSubpass(const ccstd::string &subpassName) override;
+    void setCustomShaderStages(const ccstd::string &name, gfx::ShaderStageFlagBit stageFlags) override;
 };
 
 class NativeComputeQueueBuilder final : public ComputeQueueBuilder, public NativeSetter {
@@ -456,47 +582,12 @@ public:
         NativeSetter::setSampler(name, sampler);
     }
 
-    void addTexture(const ccstd::string &name, const ccstd::string &slotName) override;
+    void addTexture(const ccstd::string &name, const ccstd::string &slotName, gfx::Sampler *sampler, uint32_t plane) override;
     void addStorageBuffer(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
     void addStorageImage(const ccstd::string &name, AccessType accessType, const ccstd::string &slotName) override;
-    void addComputeView(const ccstd::string &name, const ComputeView &view) override;
-    ComputeQueueBuilder *addQueue(const ccstd::string &layoutName) override;
-};
-
-class NativeMovePassBuilder final : public MovePassBuilder, public NativeRenderNode {
-public:
-    NativeMovePassBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn) noexcept
-    : NativeRenderNode(pipelineRuntimeIn, renderGraphIn, nodeIDIn) {}
-
-    ccstd::string getName() const override {
-        return NativeRenderNode::getName();
-    }
-    void setName(const ccstd::string &name) override {
-        NativeRenderNode::setName(name);
-    }
-    void setCustomBehavior(const ccstd::string &name) override {
-        NativeRenderNode::setCustomBehavior(name);
-    }
-
-    void addPair(const MovePair &pair) override;
-};
-
-class NativeCopyPassBuilder final : public CopyPassBuilder, public NativeRenderNode {
-public:
-    NativeCopyPassBuilder(const PipelineRuntime* pipelineRuntimeIn, RenderGraph* renderGraphIn, uint32_t nodeIDIn) noexcept
-    : NativeRenderNode(pipelineRuntimeIn, renderGraphIn, nodeIDIn) {}
-
-    ccstd::string getName() const override {
-        return NativeRenderNode::getName();
-    }
-    void setName(const ccstd::string &name) override {
-        NativeRenderNode::setName(name);
-    }
-    void setCustomBehavior(const ccstd::string &name) override {
-        NativeRenderNode::setCustomBehavior(name);
-    }
-
-    void addPair(const CopyPair &pair) override;
+    void addMaterialTexture(const ccstd::string &resourceName, gfx::ShaderStageFlagBit flags) override;
+    ComputeQueueBuilder *addQueue(const ccstd::string &phaseName) override;
+    void setCustomShaderStages(const ccstd::string &name, gfx::ShaderStageFlagBit stageFlags) override;
 };
 
 class NativeSceneTransversal final : public SceneTransversal {
@@ -515,7 +606,7 @@ public:
 struct RenderInstancingQueue {
     using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
     allocator_type get_allocator() const noexcept { // NOLINT
-        return {batches.get_allocator().resource()};
+        return {sortedBatches.get_allocator().resource()};
     }
 
     RenderInstancingQueue(const allocator_type& alloc) noexcept; // NOLINT
@@ -527,7 +618,9 @@ struct RenderInstancingQueue {
     RenderInstancingQueue& operator=(RenderInstancingQueue&& rhs) = default;
     RenderInstancingQueue& operator=(RenderInstancingQueue const& rhs) = default;
 
-    void add(pipeline::InstancedBuffer &instancedBuffer);
+    bool empty() const noexcept;
+    void clear();
+    void add(const scene::Pass& pass, scene::SubModel& submodel, uint32_t passID);
     void sort();
     void uploadBuffers(gfx::CommandBuffer *cmdBuffer) const;
     void recordCommandBuffer(
@@ -535,8 +628,9 @@ struct RenderInstancingQueue {
         gfx::DescriptorSet *ds = nullptr, uint32_t offset = 0,
         const ccstd::vector<uint32_t> *dynamicOffsets = nullptr) const;
 
-    PmrUnorderedSet<pipeline::InstancedBuffer*> batches;
     ccstd::pmr::vector<pipeline::InstancedBuffer*> sortedBatches;
+    PmrUnorderedMap<const scene::Pass*, uint32_t> passInstances;
+    ccstd::pmr::vector<IntrusivePtr<pipeline::InstancedBuffer>> instanceBuffers;
 };
 
 struct DrawInstance {
@@ -580,7 +674,7 @@ struct NativeRenderQueue {
     }
 
     NativeRenderQueue(const allocator_type& alloc) noexcept; // NOLINT
-    NativeRenderQueue(SceneFlags sceneFlagsIn, uint32_t layoutPassIDIn, const allocator_type& alloc) noexcept;
+    NativeRenderQueue(SceneFlags sceneFlagsIn, uint32_t subpassOrPassLayoutIDIn, const allocator_type& alloc) noexcept;
     NativeRenderQueue(NativeRenderQueue&& rhs, const allocator_type& alloc);
 
     NativeRenderQueue(NativeRenderQueue&& rhs) noexcept = default;
@@ -589,13 +683,15 @@ struct NativeRenderQueue {
     NativeRenderQueue& operator=(NativeRenderQueue const& rhs) = delete;
 
     void sort();
+    void clear() noexcept;
+    bool empty() const noexcept;
 
     RenderDrawQueue opaqueQueue;
     RenderDrawQueue transparentQueue;
     RenderInstancingQueue opaqueInstancingQueue;
     RenderInstancingQueue transparentInstancingQueue;
     SceneFlags sceneFlags{SceneFlags::NONE};
-    uint32_t layoutPassID{0xFFFFFFFF};
+    uint32_t subpassOrPassLayoutID{0xFFFFFFFF};
 };
 
 class DefaultSceneVisitor final : public SceneVisitor {
@@ -773,6 +869,107 @@ struct QuadResource {
     IntrusivePtr<gfx::InputAssembler> quadIA;
 };
 
+enum class ResourceType {
+    STORAGE_BUFFER,
+    STORAGE_IMAGE,
+};
+
+struct SceneResource {
+    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
+    allocator_type get_allocator() const noexcept { // NOLINT
+        return {resourceIndex.get_allocator().resource()};
+    }
+
+    SceneResource(const allocator_type& alloc) noexcept; // NOLINT
+    SceneResource(SceneResource&& rhs, const allocator_type& alloc);
+
+    SceneResource(SceneResource&& rhs) noexcept = default;
+    SceneResource(SceneResource const& rhs) = delete;
+    SceneResource& operator=(SceneResource&& rhs) = default;
+    SceneResource& operator=(SceneResource const& rhs) = delete;
+
+    ccstd::pmr::unordered_map<NameLocalID, ResourceType> resourceIndex;
+    ccstd::pmr::unordered_map<NameLocalID, IntrusivePtr<gfx::Buffer>> storageBuffers;
+    ccstd::pmr::unordered_map<NameLocalID, IntrusivePtr<gfx::Texture>> storageImages;
+};
+
+struct CullingKey {
+    const scene::Camera* camera{nullptr};
+    const scene::Light* light{nullptr};
+    bool castShadow{false};
+    uint32_t lightLevel{0xFFFFFFFF};
+};
+
+inline bool operator==(const CullingKey& lhs, const CullingKey& rhs) noexcept {
+    return std::forward_as_tuple(lhs.camera, lhs.light, lhs.castShadow, lhs.lightLevel) ==
+           std::forward_as_tuple(rhs.camera, rhs.light, rhs.castShadow, rhs.lightLevel);
+}
+
+inline bool operator!=(const CullingKey& lhs, const CullingKey& rhs) noexcept {
+    return !(lhs == rhs);
+}
+
+struct CullingQueries {
+    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
+    allocator_type get_allocator() const noexcept { // NOLINT
+        return {culledResultIndex.get_allocator().resource()};
+    }
+
+    CullingQueries(const allocator_type& alloc) noexcept; // NOLINT
+    CullingQueries(CullingQueries&& rhs, const allocator_type& alloc);
+    CullingQueries(CullingQueries const& rhs, const allocator_type& alloc);
+
+    CullingQueries(CullingQueries&& rhs) noexcept = default;
+    CullingQueries(CullingQueries const& rhs) = delete;
+    CullingQueries& operator=(CullingQueries&& rhs) = default;
+    CullingQueries& operator=(CullingQueries const& rhs) = default;
+
+    ccstd::pmr::unordered_map<CullingKey, uint32_t> culledResultIndex;
+};
+
+struct NativeRenderQueueDesc {
+    NativeRenderQueueDesc() = default;
+    NativeRenderQueueDesc(uint32_t culledSourceIn, uint32_t renderQueueTargetIn, scene::LightType lightTypeIn) noexcept // NOLINT
+    : culledSource(culledSourceIn),
+      renderQueueTarget(renderQueueTargetIn),
+      lightType(lightTypeIn) {}
+
+    uint32_t culledSource{0xFFFFFFFF};
+    uint32_t renderQueueTarget{0xFFFFFFFF};
+    scene::LightType lightType{scene::LightType::UNKNOWN};
+};
+
+struct SceneCulling {
+    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
+    allocator_type get_allocator() const noexcept { // NOLINT
+        return {sceneQueries.get_allocator().resource()};
+    }
+
+    SceneCulling(const allocator_type& alloc) noexcept; // NOLINT
+    SceneCulling(SceneCulling&& rhs, const allocator_type& alloc);
+
+    SceneCulling(SceneCulling&& rhs) noexcept = default;
+    SceneCulling(SceneCulling const& rhs) = delete;
+    SceneCulling& operator=(SceneCulling&& rhs) = default;
+    SceneCulling& operator=(SceneCulling const& rhs) = delete;
+
+    void clear() noexcept;
+    void buildRenderQueues(const RenderGraph& rg, const LayoutGraphData& lg, const pipeline::PipelineSceneData& pplSceneData);
+private:
+    uint32_t getOrCreateSceneCullingQuery(const SceneData& sceneData);
+    uint32_t createRenderQueue(SceneFlags sceneFlags, LayoutGraphData::vertex_descriptor subpassOrPassLayoutID);
+    void collectCullingQueries(const RenderGraph& rg, const LayoutGraphData& lg);
+    void batchCulling(const pipeline::PipelineSceneData& pplSceneData);
+    void fillRenderQueues(const RenderGraph& rg, const pipeline::PipelineSceneData& pplSceneData);
+public:
+    ccstd::pmr::unordered_map<const scene::RenderScene*, CullingQueries> sceneQueries;
+    ccstd::pmr::vector<ccstd::vector<const scene::Model*>> culledResults;
+    ccstd::pmr::vector<NativeRenderQueue> renderQueues;
+    PmrFlatMap<RenderGraph::vertex_descriptor, NativeRenderQueueDesc> sceneQueryIndex;
+    uint32_t numCullingQueries{0};
+    uint32_t numRenderQueues{0};
+};
+
 struct NativeRenderContext {
     using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
     allocator_type get_allocator() const noexcept { // NOLINT
@@ -788,10 +985,12 @@ struct NativeRenderContext {
     void clearPreviousResources(uint64_t finishedFenceValue) noexcept;
 
     std::unique_ptr<gfx::DefaultResource> defaultResource;
+    uint64_t nextFenceValue{0};
     ccstd::pmr::map<uint64_t, ResourceGroup> resourceGroups;
     ccstd::pmr::vector<LayoutGraphNodeResource> layoutGraphResources;
+    ccstd::pmr::unordered_map<const scene::RenderScene*, SceneResource> renderSceneResources;
     QuadResource fullscreenQuad;
-    uint64_t nextFenceValue{0};
+    SceneCulling sceneCulling;
 };
 
 class NativeProgramLibrary final : public ProgramLibrary {
@@ -813,7 +1012,7 @@ public:
     const gfx::ShaderInfo &getShaderInfo(uint32_t phaseID, const ccstd::string &programName) const override;
     ProgramProxy *getProgramVariant(gfx::Device *device, uint32_t phaseID, const ccstd::string &name, MacroRecord &defines, const ccstd::pmr::string *key) override;
     gfx::PipelineState *getComputePipelineState(gfx::Device *device, uint32_t phaseID, const ccstd::string &name, MacroRecord &defines, const ccstd::pmr::string *key) override;
-    const ccstd::vector<int32_t> &getBlockSizes(uint32_t phaseID, const ccstd::string &programName) const override;
+    const ccstd::vector<int> &getBlockSizes(uint32_t phaseID, const ccstd::string &programName) const override;
     const ccstd::unordered_map<ccstd::string, uint32_t> &getHandleMap(uint32_t phaseID, const ccstd::string &programName) const override;
     uint32_t getProgramID(uint32_t phaseID, const ccstd::pmr::string &programName) override;
     uint32_t getDescriptorNameID(const ccstd::pmr::string &name) override;
@@ -899,30 +1098,37 @@ public:
     void resetRenderQueue(bool reset) override;
     bool isRenderQueueReset() const override;
 
+    PipelineType getType() const override;
+    PipelineCapabilities getCapabilities() const override;
     void beginSetup() override;
     void endSetup() override;
     bool containsResource(const ccstd::string &name) const override;
-    uint32_t addRenderTexture(const ccstd::string &name, gfx::Format format, uint32_t width, uint32_t height, scene::RenderWindow *renderWindow) override;
     uint32_t addRenderWindow(const ccstd::string &name, gfx::Format format, uint32_t width, uint32_t height, scene::RenderWindow *renderWindow) override;
     void updateRenderWindow(const ccstd::string &name, scene::RenderWindow *renderWindow) override;
-    uint32_t addStorageBuffer(const ccstd::string &name, gfx::Format format, uint32_t size, ResourceResidency residency) override;
     uint32_t addRenderTarget(const ccstd::string &name, gfx::Format format, uint32_t width, uint32_t height, ResourceResidency residency) override;
     uint32_t addDepthStencil(const ccstd::string &name, gfx::Format format, uint32_t width, uint32_t height, ResourceResidency residency) override;
+    void updateRenderTarget(const ccstd::string &name, uint32_t width, uint32_t height, gfx::Format format) override;
+    void updateDepthStencil(const ccstd::string &name, uint32_t width, uint32_t height, gfx::Format format) override;
+    void beginFrame() override;
+    void update(const scene::Camera *camera) override;
+    void endFrame() override;
+    BasicRenderPassBuilder *addMultisampleRenderPass(uint32_t width, uint32_t height, uint32_t count, uint32_t quality, const ccstd::string &passName) override;
+    void addResolvePass(const ccstd::vector<ResolvePair> &resolvePairs) override;
+    void addCopyPass(const ccstd::vector<CopyPair> &copyPairs) override;
+    gfx::DescriptorSetLayout *getDescriptorSetLayout(const ccstd::string &shaderName, UpdateFrequency freq) override;
+
+    uint32_t addStorageBuffer(const ccstd::string &name, gfx::Format format, uint32_t size, ResourceResidency residency) override;
     uint32_t addStorageTexture(const ccstd::string &name, gfx::Format format, uint32_t width, uint32_t height, ResourceResidency residency) override;
     uint32_t addShadingRateTexture(const ccstd::string &name, uint32_t width, uint32_t height, ResourceResidency residency) override;
     void updateStorageBuffer(const ccstd::string &name, uint32_t size, gfx::Format format) override;
-    void updateRenderTarget(const ccstd::string &name, uint32_t width, uint32_t height, gfx::Format format) override;
-    void updateDepthStencil(const ccstd::string &name, uint32_t width, uint32_t height, gfx::Format format) override;
     void updateStorageTexture(const ccstd::string &name, uint32_t width, uint32_t height, gfx::Format format) override;
     void updateShadingRateTexture(const ccstd::string &name, uint32_t width, uint32_t height) override;
-    void beginFrame() override;
-    void endFrame() override;
-    RasterPassBuilder *addRasterPass(uint32_t width, uint32_t height, const ccstd::string &layoutName) override;
-    ComputePassBuilder *addComputePass(const ccstd::string &layoutName) override;
-    MovePassBuilder *addMovePass() override;
-    CopyPassBuilder *addCopyPass() override;
-    SceneTransversal *createSceneTransversal(const scene::Camera *camera, const scene::RenderScene *scene) override;
-    gfx::DescriptorSetLayout *getDescriptorSetLayout(const ccstd::string &shaderName, UpdateFrequency freq) override;
+    RenderPassBuilder *addRenderPass(uint32_t width, uint32_t height, const ccstd::string &passName) override;
+    ComputePassBuilder *addComputePass(const ccstd::string &passName) override;
+    void addUploadPass(ccstd::vector<UploadPair> &uploadPairs) override;
+    void addMovePass(const ccstd::vector<MovePair> &movePairs) override;
+    uint32_t addCustomBuffer(const ccstd::string &name, const gfx::BufferInfo &info, const std::string &type) override;
+    uint32_t addCustomTexture(const ccstd::string &name, const gfx::TextureInfo &info, const std::string &type) override;
 
     void executeRenderGraph(const RenderGraph& rg);
 
@@ -981,7 +1187,8 @@ public:
     : programLibrary(std::move(programLibraryIn)) {}
 
     uint32_t getPassID(const ccstd::string &name) const override;
-    uint32_t getPhaseID(uint32_t passID, const ccstd::string &name) const override;
+    uint32_t getSubpassID(uint32_t passID, const ccstd::string &name) const override;
+    uint32_t getPhaseID(uint32_t subpassOrPassID, const ccstd::string &name) const override;
 
     std::shared_ptr<NativeProgramLibrary> programLibrary;
 };
@@ -990,8 +1197,21 @@ public:
 
 } // namespace cc
 
+namespace ccstd {
+
+inline hash_t hash<cc::render::CullingKey>::operator()(const cc::render::CullingKey& val) const noexcept {
+    hash_t seed = 0;
+    hash_combine(seed, val.camera);
+    hash_combine(seed, val.light);
+    hash_combine(seed, val.castShadow);
+    hash_combine(seed, val.lightLevel);
+    return seed;
+}
+
+} // namespace ccstd
+
 // clang-format on
 
 #ifdef _MSC_VER
-#pragma warning(pop)
+    #pragma warning(pop)
 #endif

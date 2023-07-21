@@ -29,50 +29,58 @@ import {
     serializable,
     formerlySerializedAs,
     type,
+    tooltip,
 } from 'cc.decorator';
-import { EDITOR } from 'internal:constants';
+import { EDITOR_NOT_IN_PREVIEW } from 'internal:constants';
 import { Constraint } from './constraint';
 import { CCFloat, IVec3Like, Vec3 } from '../../../../core';
 import { EConstraintType } from '../../physics-enum';
 import { IFixedConstraint } from '../../../spec/i-physics-constraint';
-import { legacyCC } from '../../../../core/global-exports';
 
+/**
+ * @en The fixed constraint.
+ * It locks the relative position and rotation between two rigid bodies.
+ * @zh 固定关节。
+ * 固定关节会锁定两个刚体间的相对位置和相对旋转。
+ */
 @ccclass('cc.FixedConstraint')
 @help('i18n:cc.FixedConstraint')
 @menu('Physics/FixedConstraint(beta)')
 export class FixedConstraint extends Constraint {
     /**
      * @en
-     * The break force threshold of the constraint.
+     * The maximum force that can be applied to the constraint before it breaks.
      * @zh
      * 约束的断裂力阈值。
      */
     @type(CCFloat)
+    @tooltip('i18n:physics3d.constraint.breakForce')
     get breakForce (): number {
         return this._breakForce;
     }
 
     set breakForce (v: number) {
         this._breakForce = v;
-        if (!EDITOR || legacyCC.GAME_VIEW) {
+        if (!EDITOR_NOT_IN_PREVIEW) {
             this.constraint.setBreakForce(v);
         }
     }
 
     /**
      * @en
-     * The break torque threshold of the constraint.
+     * The maximum torque that can be applied to the constraint before it breaks.
      * @zh
      * 约束的断裂扭矩阈值。
      */
     @type(CCFloat)
+    @tooltip('i18n:physics3d.constraint.breakTorque')
     get breakTorque (): number {
         return this._breakTorque;
     }
 
     set breakTorque (v: number) {
         this._breakTorque = v;
-        if (!EDITOR || legacyCC.GAME_VIEW) {
+        if (!EDITOR_NOT_IN_PREVIEW) {
             this.constraint.setBreakTorque(v);
         }
     }

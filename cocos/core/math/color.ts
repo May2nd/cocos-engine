@@ -99,7 +99,7 @@ export class Color extends ValueType {
      * color.toVec4();
      * ```
      */
-    public static toVec4 (color:Color, out?: Vec4): Vec4 {
+    public static toVec4 (color: Color, out?: Vec4): Vec4 {
         out = out !== undefined ?  out : new Vec4();
         out.x = color.r * toFloat;
         out.y = color.g * toFloat;
@@ -244,6 +244,32 @@ export class Color extends ValueType {
     }
 
     /**
+     * @zh 从无符号 32 位整数构造颜色，高 8 位为 alpha 通道，次高 8 位为蓝色通道，次低 8 位为绿色通道，低 8 位为红色通道。
+     * @en Construct color from a unsigned 32 bit integer, the highest 8 bits is for alpha channel, the second highest 8 bits is for blue channel,
+     * the second lowest 8 bits is for green channel, and the lowest 8 bits if for red channel.
+     *
+     * @param out @en Output color object. @zh 输出的颜色对象。
+     * @param uint32 @en The unsigned 32 bit integer @zh 32 位无符号整数
+     * @returns @en The `out` object @zh `out` 对象
+     */
+    public static fromUint32<Out extends IColorLike> (out: Out, uint32: number) {
+        out._val = uint32;
+        return out;
+    }
+
+    /**
+     * @zh 转换当前颜色为无符号 32 位整数, 高 8 位为 alpha 通道，次高 8 位为蓝色通道，次低 8 位为绿色通道，低 8 位为红色通道。
+     * @en Convert the current color to a unsigned 32 bit integer, the highest 8 bits is for alpha channel,
+     * the second highest 8 bits is for blue channel, the second lowest 8 bits is for green channel, and the lowest 8 bits if for red channel.
+     *
+     * @param color @en The color. @zh 颜色。
+     * @returns @en The converted unsigned 32 bit integer. @zh 32 位无符号整数。
+     */
+    public static toUint32 (color: IColorLike): number {
+        return color._val;
+    }
+
+    /**
      * @en Check whether the two given colors are identical
      * @zh 颜色等价判断
      */
@@ -256,7 +282,8 @@ export class Color extends ValueType {
      * @zh 排除浮点数误差的颜色近似等价判断
      */
     public static equals<Out extends IColorLike> (a: Out, b: Out, epsilon = EPSILON) {
-        return (Math.abs(a.r - b.r) <= epsilon * Math.max(1.0, Math.abs(a.r), Math.abs(b.r))
+        const hasInf = Math.abs(a.r) === Infinity || Math.abs(a.g) === Infinity || Math.abs(a.b) === Infinity || Math.abs(a.a) === Infinity;
+        return !hasInf && (Math.abs(a.r - b.r) <= epsilon * Math.max(1.0, Math.abs(a.r), Math.abs(b.r))
             && Math.abs(a.g - b.g) <= epsilon * Math.max(1.0, Math.abs(a.g), Math.abs(b.g))
             && Math.abs(a.b - b.b) <= epsilon * Math.max(1.0, Math.abs(a.b), Math.abs(b.b))
             && Math.abs(a.a - b.a) <= epsilon * Math.max(1.0, Math.abs(a.a), Math.abs(b.a)));

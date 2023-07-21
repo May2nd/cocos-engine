@@ -121,7 +121,7 @@ export class PhysXSharedBody {
         this.id = PhysXSharedBody.idCounter++;
         this.node = node;
         this.wrappedWorld = wrappedWorld;
-        this._filterData = { word0: 1, word1: 1, word2: 0, word3: 0 };
+        this._filterData = { word0: 1, word1: 1, word2: 1, word3: 0 };
     }
 
     private _initActor (): void {
@@ -240,13 +240,13 @@ export class PhysXSharedBody {
         }
     }
 
-    setLinearDamping (linDamp:number) {
+    setLinearDamping (linDamp: number) {
         if (!this._dynamicActor) return;
         const dt = PhysicsSystem.instance.fixedTimeStep;
         this._dynamicActor.setLinearDamping((1 - (1 - linDamp) ** dt) / dt);
     }
 
-    setAngularDamping (angDamp:number) {
+    setAngularDamping (angDamp: number) {
         if (!this._dynamicActor) return;
         const dt = PhysicsSystem.instance.fixedTimeStep;
         this._dynamicActor.setAngularDamping((1 - (1 - angDamp) ** dt) / dt);

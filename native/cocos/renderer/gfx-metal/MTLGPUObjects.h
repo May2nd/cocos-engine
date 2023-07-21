@@ -34,6 +34,7 @@
 #import "MTLDevice.h"
 #import "MTLUtils.h"
 #include "base/std/container/queue.h"
+#include <array>
 
 namespace cc {
 namespace gfx {
@@ -96,18 +97,30 @@ struct CCMTLGPUSubpassAttachment {
     uint32_t binding = INVALID_BINDING;
 };
 
+struct ResourceBinding {
+    uint32_t bufferBinding{0};
+    uint32_t textureBinding{0};
+    uint32_t samplerBinding{0};
+};
+
 struct CCMTLGPUShader {
     ccstd::unordered_map<uint32_t, CCMTLGPUUniformBlock> blocks;
     ccstd::unordered_map<uint32_t, CCMTLGPUSamplerBlock> samplers;
+    
+    ccstd::unordered_map<uint32_t, ResourceBinding> resourceBinding;
 
     ccstd::vector<CCMTLGPUSubpassAttachment> inputs;
     ccstd::vector<CCMTLGPUSubpassAttachment> outputs;
 
+    std::array<uint32_t, 3> workGroupSize{0, 0, 0};
+    
     NSString *shaderSrc = nil;
     bool specializeColor = true;
 
     uint32_t bufferIndex = 0;
     uint32_t samplerIndex = 0;
+    
+    std::string name;
 };
 
 struct CCMTLGPUPipelineState {

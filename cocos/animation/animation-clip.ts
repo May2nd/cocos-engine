@@ -26,7 +26,7 @@ import { ccclass, serializable } from 'cc.decorator';
 import { DEBUG } from 'internal:constants';
 import { Asset } from '../asset/assets/asset';
 import { SpriteFrame } from '../2d/assets/sprite-frame';
-import { errorID, warnID, cclegacy, js, geometry, approx, clamp, Mat4, Quat, Vec3, murmurhash2_32_gc, binarySearchEpsilon, assertIsTrue } from '../core';
+import { errorID, warnID, cclegacy, js, geometry, approx, clamp, Mat4, Quat, Vec3, murmurhash2_32_gc, binarySearchEpsilon, assertIsTrue, RealCurve } from '../core';
 import { SkelAnimDataHub } from '../3d/skeletal-animation/skeletal-animation-data-hub';
 import { WrapMode as AnimationWrapMode, WrapMode } from './types';
 import { Node } from '../scene-graph/node';
@@ -43,6 +43,9 @@ import './exotic-animation/exotic-animation';
 import type { AnimationMask } from './marionette/animation-mask';
 import { getGlobalAnimationManager } from './global-animation-manager';
 import { EmbeddedPlayableState, EmbeddedPlayer } from './embedded-player/embedded-player';
+import { AuxiliaryCurveEntry } from './auxiliary-curve-entry';
+import { removeIf } from '../core/utils/array';
+import { invokeComponentMethodsEngagedInAnimationEvent } from './event/event-emitter';
 
 export declare namespace AnimationClip {
     export interface IEvent {
@@ -81,6 +84,11 @@ export const getEmbeddedPlayersTag = Symbol('[[GetEmbeddedPlayers]]');
 export const addEmbeddedPlayerTag = Symbol('[[AddEmbeddedPlayer]]');
 export const removeEmbeddedPlayerTag = Symbol('[[RemoveEmbeddedPlayer]]');
 export const clearEmbeddedPlayersTag = Symbol('[[ClearEmbeddedPlayers]]');
+
+/**
+ * Tag to access the additive settings associated on animation clip.
+ */
+export const additiveSettingsTag = Symbol('[[Additive Settings]]');
 
 /**
  * @zh 动画剪辑表示一段使用动画编辑器编辑的关键帧动画或是外部美术工具生产的骨骼动画。
@@ -229,6 +237,22 @@ export class AnimationClip extends Asset {
 
     set [exoticAnimationTag] (value) {
         this._exoticAnimation = value;
+    }
+
+    /**
+     * Gets if this animation clip contains additive animation.
+     * @experimental
+     */
+    get isAdditive_experimental () {
+        return this._additiveSettings.enabled;
+    }
+
+    /**
+     * Accesses the additive animation settings.
+     * @internal
+     */
+    get [additiveSettingsTag] () {
+        return this._additiveSettings;
     }
 
     public onLoaded () {
@@ -645,6 +669,93 @@ export class AnimationClip extends Asset {
         this._embeddedPlayers.length = 0;
     }
 
+    /**
+     * @zh 获取此动画剪辑中的辅助曲线数量。
+     * @en Gets the count of auxiliary curves within this animation clip.
+     */
+    public get auxiliaryCurveCount_experimental () {
+        return this._auxiliaryCurveEntries.length;
+    }
+
+    /**
+     * @zh 返回此动画剪辑中所有辅助曲线的名称。
+     * @en Returns names of all auxiliary curves within this animation clip.
+     */
+    public getAuxiliaryCurveNames_experimental (): readonly string[] {
+        return this._auxiliaryCurveEntries.map((entry) => entry.name);
+    }
+
+    /**
+     * @zh 返回此动画剪辑中是否存在指定的辅助曲线。
+     * @en Returns if the specified auxiliary curve exists in this animation clip.
+     */
+    public hasAuxiliaryCurve_experimental (name: string) {
+        return !!this._findAuxiliaryCurveEntry(name);
+    }
+
+    /**
+     * @zh 添加一条辅助曲线。如果已存在同名的辅助曲线，则直接返回。
+     * @en Adds an auxiliary curve. Directly return if there is already such named auxiliary curve.
+     * @param name @zh 辅助曲线的名称。@en The auxiliary curve's name.
+     * @returns @zh 新增或已存在的辅助曲线。 @en The newly created or existing auxiliary curve.
+     * @experimental
+     */
+    public addAuxiliaryCurve_experimental (name: string): RealCurve {
+        let entry = this._findAuxiliaryCurveEntry(name);
+        if (!entry) {
+            entry = new AuxiliaryCurveEntry();
+            entry.name = name;
+            this._auxiliaryCurveEntries.push(entry);
+        }
+        return entry.curve;
+    }
+
+    /**
+     * @zh 获取指定的辅助曲线。
+     * @en Gets the specified auxiliary curve.
+     * @param name @zh 辅助曲线的名称。@en The auxiliary curve's name.
+     * @returns @zh 指定的辅助曲线。@en The specified auxiliary curve.
+     * @experimental
+     */
+    public getAuxiliaryCurve_experimental (name: string) {
+        const entry = this._findAuxiliaryCurveEntry(name);
+        assertIsTrue(entry);
+        return entry.curve;
+    }
+
+    /**
+     * @zh 重命名指定的辅助曲线。
+     * @en Renames the specified auxiliary curve.
+     * @param name @zh 要重命名的辅助曲线的名称。@en Name of the auxiliary curve to rename.
+     * @param newName @zh 新名称。@en New name.
+     */
+    public renameAuxiliaryCurve_experimental (name: string, newName: string) {
+        const entry = this._findAuxiliaryCurveEntry(name);
+        if (entry) {
+            entry.name = newName;
+        }
+    }
+
+    /**
+     * @zh 移除指定的辅助曲线。
+     * @en Removes the specified auxiliary curve.
+     * @param name @zh 辅助曲线的名称。@en The auxiliary curve's name.
+     * @experimental
+     */
+    public removeAuxiliaryCurve_experimental (name: string) {
+        removeIf(this._auxiliaryCurveEntries, (entry) => entry.name === name);
+    }
+
+    /**
+     * @internal
+     */
+    public _trySyncLegacyData () {
+        if (this._legacyDataDirty) {
+            this._legacyDataDirty = false;
+            this.syncLegacyData();
+        }
+    }
+
     @serializable
     private _duration = 0;
 
@@ -668,6 +779,12 @@ export class AnimationClip extends Asset {
 
     @serializable
     private _embeddedPlayers: EmbeddedPlayer[] = [];
+
+    @serializable
+    private _additiveSettings = new AdditiveSettings();
+
+    @serializable
+    private _auxiliaryCurveEntries: AuxiliaryCurveEntry[] = [];
 
     private _runtimeEvents: {
         ratios: number[];
@@ -693,7 +810,7 @@ export class AnimationClip extends Asset {
             );
         }
 
-        const trackEvalStatues: TrackEvalStatus[] = [];
+        const trackEvalStatues: TrackEvalStatus<unknown>[] = [];
         let exoticAnimationEvaluator: ExoticAnimationEvaluator | undefined;
 
         const { _tracks: tracks } = this;
@@ -706,15 +823,29 @@ export class AnimationClip extends Asset {
             if (Array.from(track.channels()).every(({ curve }) => curve.keyFramesCount === 0)) {
                 continue;
             }
-            const trackTarget = binder(track[trackBindingTag]);
-            if (!trackTarget) {
+            const runtimeBinding = binder(track[trackBindingTag]);
+            if (!runtimeBinding) {
                 continue;
             }
-            const trackEval = track[createEvalSymbol](trackTarget);
-            trackEvalStatues.push({
-                binding: trackTarget,
-                trackEval,
-            });
+
+            let trackEval: TrackEval<unknown>;
+            if (!(track instanceof UntypedTrack)) {
+                trackEval = track[createEvalSymbol]();
+            } else {
+                // Handle untyped track specially.
+                if (!runtimeBinding.getValue) {
+                    // If we can not get a value from binding,
+                    // we're not able to instantiate the untyped track.
+                    // This matches the behavior prior to V3.3.
+                    errorID(3930);
+                    continue;
+                }
+
+                const hintValue = runtimeBinding.getValue();
+                trackEval = track.createLegacyEval(hintValue);
+            }
+
+            trackEvalStatues.push(new TrackEvalStatus(runtimeBinding, trackEval));
         }
 
         if (this._exoticAnimation) {
@@ -755,7 +886,7 @@ export class AnimationClip extends Asset {
         // const { } = rootMotionOptions;
 
         const boneTransform = new BoneTransform();
-        const rootMotionsTrackEvaluations: TrackEvalStatus[] = [];
+        const rootMotionsTrackEvaluations: TrackEvalStatus<unknown>[] = [];
         const { _tracks: tracks } = this;
         const nTracks = tracks.length;
         for (let iTrack = 0; iTrack < nTracks; ++iTrack) {
@@ -771,15 +902,12 @@ export class AnimationClip extends Asset {
             }
             rootMotionTrackExcludes.push(track);
             const property = trsPath.property;
-            const trackTarget = createBoneTransformBinding(boneTransform, property);
-            if (!trackTarget) {
+            const runtimeBinding = createBoneTransformBinding(boneTransform, property);
+            if (!runtimeBinding) {
                 continue;
             }
-            const trackEval = track[createEvalSymbol](trackTarget);
-            rootMotionsTrackEvaluations.push({
-                binding: trackTarget,
-                trackEval,
-            });
+            const trackEval = track[createEvalSymbol]();
+            rootMotionsTrackEvaluations.push(new TrackEvalStatus(runtimeBinding, trackEval));
         }
         const rootMotionEvaluation = new RootMotionEvaluation(
             rootBone,
@@ -882,7 +1010,22 @@ export class AnimationClip extends Asset {
 
         return Array.from(joints);
     }
+
+    private _findAuxiliaryCurveEntry (name: string) {
+        return this._auxiliaryCurveEntries.find((entry) => entry.name === name);
+    }
 }
+
+@ccclass('cc.AnimationClipAdditiveSettings')
+class AdditiveSettings {
+    @serializable
+    public enabled = false;
+
+    @serializable
+    public refClip: AnimationClip | null = null;
+}
+
+export { AdditiveSettings as AnimationClipAdditiveSettings };
 
 type WrapMode_ = WrapMode;
 
@@ -892,9 +1035,23 @@ export declare namespace AnimationClip {
 
 cclegacy.AnimationClip = AnimationClip;
 
-interface TrackEvalStatus {
-    binding: RuntimeBinding;
-    trackEval: TrackEval;
+class TrackEvalStatus<TValue> {
+    constructor (binding: RuntimeBinding<TValue>, trackEval: TrackEval<TValue>) {
+        this._binding = binding;
+        this._trackEval = trackEval;
+    }
+
+    public evaluate (time: number) {
+        const { _binding: binding, _trackEval: trackEval } = this;
+        const defaultValue = binding.getValue && trackEval.requiresDefault
+            ? binding.getValue() as TValue extends unknown ? unknown : Readonly<TValue>
+            : undefined;
+        const value = trackEval.evaluate(time, defaultValue);
+        binding.setValue(value);
+    }
+
+    private _binding: RuntimeBinding<TValue>;
+    private _trackEval: TrackEval<TValue>;
 }
 
 interface AnimationClipEvalContext {
@@ -1116,7 +1273,7 @@ class EmbeddedPlayerEvaluation {
 
 class AnimationClipEvaluation {
     constructor (
-        trackEvalStatuses: TrackEvalStatus[],
+        trackEvalStatuses: TrackEvalStatus<unknown>[],
         exoticAnimationEvaluator: ExoticAnimationEvaluator | undefined,
         rootMotionEvaluation: RootMotionEvaluation | undefined,
     ) {
@@ -1137,9 +1294,7 @@ class AnimationClipEvaluation {
 
         const nTrackEvalStatuses = trackEvalStatuses.length;
         for (let iTrackEvalStatus = 0; iTrackEvalStatus < nTrackEvalStatuses; ++iTrackEvalStatus) {
-            const { trackEval, binding } = trackEvalStatuses[iTrackEvalStatus];
-            const value = trackEval.evaluate(time, binding);
-            binding.setValue(value);
+            trackEvalStatuses[iTrackEvalStatus].evaluate(time);
         }
 
         if (exoticAnimationEvaluator) {
@@ -1160,7 +1315,7 @@ class AnimationClipEvaluation {
     }
 
     private _exoticAnimationEvaluator: ExoticAnimationEvaluator | undefined;
-    private _trackEvalStatues:TrackEvalStatus[] = [];
+    private _trackEvalStatues: TrackEvalStatus<unknown>[] = [];
     private _rootMotionEvaluation: RootMotionEvaluation | undefined = undefined;
 }
 
@@ -1205,7 +1360,7 @@ class RootMotionEvaluation {
         private _rootBone: Node,
         private _duration: number,
         private _boneTransform: BoneTransform,
-        private _trackEvalStatuses: TrackEvalStatus[],
+        private _trackEvalStatuses: TrackEvalStatus<unknown>[],
     ) {
 
     }
@@ -1277,9 +1432,7 @@ class RootMotionEvaluation {
 
         const nTrackEvalStatuses = trackEvalStatuses.length;
         for (let iTrackEvalStatus = 0; iTrackEvalStatus < nTrackEvalStatuses; ++iTrackEvalStatus) {
-            const { trackEval, binding } = trackEvalStatuses[iTrackEvalStatus];
-            const value = trackEval.evaluate(time, binding);
-            binding.setValue(value);
+            trackEvalStatuses[iTrackEvalStatus].evaluate(time);
         }
 
         this._boneTransform.getTransform(outTransform);
@@ -1376,7 +1529,19 @@ class EventEvaluator {
         }
     }
 
+    public reset () {
+        this._lastFrameIndex = -1;
+        this._lastIterations = 0.0;
+        this._lastDirection = 0;
+        this._ignoreIndex = InvalidIndex;
+        this._sampled = false;
+    }
+
     public sample (ratio: number, direction: number, iterations: number) {
+        if (this._eventGroups.length === 0) {
+            return;
+        }
+
         const length = this._eventGroups.length;
         let eventIndex = getEventGroupIndexAtRatio(ratio, this._ratios);
         if (eventIndex < 0) {
@@ -1475,19 +1640,10 @@ class EventEvaluator {
         }
 
         const eventGroup = eventGroups[eventIndex];
-        const components = this._targetNode.components;
         const nEvents = eventGroup.events.length;
         for (let iEvent = 0; iEvent < nEvents; ++iEvent) {
             const event = eventGroup.events[iEvent];
-            const { functionName } = event;
-            const nComponents = components.length;
-            for (let iComponent = 0; iComponent < nComponents; ++iComponent) {
-                const component = components[iComponent];
-                const fx = component[functionName];
-                if (typeof fx === 'function') {
-                    fx.apply(component, event.parameters);
-                }
-            }
+            invokeComponentMethodsEngagedInAnimationEvent(this._targetNode, event.functionName, event.parameters);
         }
     }
 }

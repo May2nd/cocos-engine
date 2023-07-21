@@ -8,10 +8,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow-y: scroll;
-    overflow-x: auto;
-    padding-left: 6px;
-    padding-right: 2px;
+    overflow: auto;
 }
 
 .container[hoving] {
@@ -21,7 +18,7 @@
 
 .prefab {
     display: flex;
-    padding: 5px 0 10px 0;
+    padding: 4px 4px 0 4px;
 }
 
 .prefab[hidden] {
@@ -34,8 +31,8 @@
 }
 
 .prefab > ui-button {
-    padding: 0 7px;
-    margin-left: 10px;
+    padding: 0 8px;
+    margin-left: 4px;
 }
 
 .prefab[missing] > ui-label {
@@ -44,34 +41,40 @@
 
 .header {
     display: none;
-    margin-top: 7px;
-    padding-left: 4px;
+    margin: 4px 4px 4px 0;
+}
+
+.header > .active {
+    width: 20px;
 }
 
 .header > .name,
 .component-header .name {
     flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .scene {
     display: none;
+    border-top: solid 1px var(--color-normal-border);
 }
 
-.scene > ui-prop {
-    margin: 10px 0;
-}
-
-.scene ui-section div[slot="header"] ui-link {
-    margin-right: 4px;
-}
-
-.scene .envmap .envmap-prop {
+.scene ui-prop[ui-section-config],
+.scene ui-section.config {
     margin-top: 0;
 }
 
-.scene .envmap .envmap-radio {
-    margin-top: 16px;
-    padding-left: 1px;
+.scene ui-prop[ui-section-config] ui-section.config [slot="header"] {
+    flex: 1;
+    justify-content: space-between;
+    margin-right: 2px;
+}
+
+.scene .envmap .envmap-prop ui-prop {
+    margin-top: 0;
+    margin-left: 0;
 }
 
 :host([type="node"][sub-type='scene']) > .container > .scene {
@@ -125,38 +128,29 @@
     color: var(--color-focus-fill-weakest);
 }
 
-.node {
-    display: none;
-}
-
 .node .layer-content {
     display: flex;
 }
 
 .node .layer-content > .layer-select {
     flex: 1;
-    margin-top: 0;
+    margin: 0;
 }
 
 .node .layer-content > .layer-edit {
     margin-left: 4px;
 }
 
-.node .node-section {
-    margin-top: 6px;
-}
-
 :host([sub-type='node']) > .container > .node {
     display: block;
 }
 
-.component {
-    margin-top: 10px;
-}
-
 .component .component-header {
     flex: 1;
+    min-width: 0;
     display: flex;
+    align-items: center;
+    margin-right: 2px;
 }
 
 .component .component-header ui-drag-item {
@@ -165,13 +159,15 @@
 
 .component .component-header > .menu,
 .component .component-header > .link {
-    padding: 0 5px;
-    transition: color 0.15s;
-    color: var(--color-default-contrast-emphasis);
+    padding: 0 2px;
+}
+
+.component .component-header > .menu {
+    opacity: 0.8;
 }
 
 .component .component-header > .menu:hover {
-    opacity: 0.8;
+    opacity: 1;
 }
 
 .component .component-header > .link {
@@ -182,8 +178,13 @@
     display: inline-block;
 }
 
+.scene .skybox,
 .component ui-prop {
-    margin-top: 6px;
+    margin-top: 4px;
+}
+
+.scene .skybox > [slot="header"] {
+    justify-content: space-between;
 }
 
 .component ui-prop [slot='label'] {
@@ -197,15 +198,14 @@
     text-align: center;
 }
 
+.footer .add-component {
+    padding: 0 24px;
+}
+
+.section-asset {
+    margin-bottom: 16px;
+}
+
 .section-asset:empty {
     display: none;
-}
-
-.section-asset > ui-panel[type="asset"] {
-    margin-bottom: 4px;
-    border-radius: 2px;
-}
-
-.section-asset > ui-panel[type="asset"][focused] {
-    box-shadow: var(--color-primary-contrast-weakest) 0 0 4px;
 }

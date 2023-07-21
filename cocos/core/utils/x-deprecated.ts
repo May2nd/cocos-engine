@@ -28,6 +28,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable prefer-const */
 
+import { DEBUG } from 'internal:constants';
 import { error, errorID, warn, warnID } from '../platform/debug';
 
 let defaultLogTimes = 10;
@@ -224,7 +225,7 @@ markAsWarningLog = (n: string, dp: string, f: Function, id: number, s: string) =
 };
 
 markAsWarning = (owner: object, ownerName: string, properties: IMarkItem[]) => {
-    if (owner == null) return;
+    if (!DEBUG || owner == null) return;
 
     const _defaultGetSet = (d: PropertyDescriptor, n: string, dp: string, f: Function, id: number, s: string) => {
         if (d.get) {
@@ -392,8 +393,8 @@ export function __checkObsoleteInNamespace__ (ccNamespace: object) {
         } else {
             _cachedProxy = new Proxy(ccNamespace, {
                 get (target, name, receiver) {
-                    // @ts-expect-error name could be a symbol
-                    _checkObsoleteByName(name);
+                    // NOTE: for now we use tsc version 4.3.5, which has not supported symbol as index.
+                    _checkObsoleteByName(name as string);
                     return Reflect.get(target, name, receiver);
                 },
             });

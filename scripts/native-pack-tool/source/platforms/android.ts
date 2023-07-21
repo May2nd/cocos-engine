@@ -3,7 +3,7 @@ import * as ps from 'path';
 import { CocosParams, NativePackTool } from "../base/default";
 import { cchelper, Paths } from "../utils";
 import * as URL from 'url';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 export interface IOrientation {
     landscapeLeft: boolean;
@@ -64,6 +64,7 @@ export class AndroidPackTool extends NativePackTool {
         await this.encrypteScripts();
         await this.updateAndroidGradleValues();
         await this.configAndroidInstant();
+        await this.generateAppNameValues();
         return true;
     }
 
@@ -85,7 +86,7 @@ export class AndroidPackTool extends NativePackTool {
         const outputMode = this.params.debug ? 'Debug' : 'Release';
 
         // compile android
-        buildMode = `${this.params.projectName}:assemble${outputMode}`;
+        buildMode = `${this.projectNameASCII()}:assemble${outputMode}`;
         // await cchelper.runCmd(gradle, [buildMode /* "--quiet",*/ /*"--build-cache", "--project-cache-dir", nativePrjDir */], false, projDir);
 
         // pushd
@@ -129,8 +130,10 @@ export class AndroidPackTool extends NativePackTool {
             const pattern = /android:screenOrientation="[^"]*"/;
             let replaceString = 'android:screenOrientation="unspecified"';
 
-            if (cfg.landscapeRight && cfg.landscapeLeft && cfg.portrait && cfg.upsideDown) {
+            if (cfg.landscapeRight && cfg.landscapeLeft && (cfg.portrait || cfg.upsideDown)) {
                 replaceString = 'android:screenOrientation="fullSensor"';
+            } else if ((cfg.landscapeRight || cfg.landscapeLeft) && (cfg.portrait || cfg.upsideDown)) {
+                replaceString = 'android:screenOrientation="unspecified"';
             } else if (cfg.landscapeRight && !cfg.landscapeLeft) {
                 replaceString = 'android:screenOrientation="landscape"';
             } else if (!cfg.landscapeRight && cfg.landscapeLeft) {
@@ -198,6 +201,7 @@ export class AndroidPackTool extends NativePackTool {
             content = content.replace(/PROP_MIN_SDK_VERSION=.*/, `PROP_MIN_SDK_VERSION=${Math.min(apiLevel, minimalSDKVersion)}`);
             content = content.replace(/PROP_APP_NAME=.*/, `PROP_APP_NAME=${this.params.projectName}`);
             content = content.replace(/PROP_ENABLE_INSTANT_APP=.*/, `PROP_ENABLE_INSTANT_APP=${options.androidInstant ? "true" : "false"}`);
+            content = content.replace(/PROP_ENABLE_INPUTSDK=.*/, `PROP_ENABLE_INPUTSDK=${options.inputSDK ? "true" : "false"}`);
             content = content.replace(/PROP_IS_DEBUG=.*/, `PROP_IS_DEBUG=${this.params.debug ? "true" : "false"}`);
 
             content = content.replace(/RES_PATH=.*/, `RES_PATH=${cchelper.fixPath(this.paths.buildDir)}`);
@@ -226,7 +230,7 @@ export class AndroidPackTool extends NativePackTool {
                 content = content.replace(/:/g, '\\:');
             }
 
-            fs.writeFileSync(cchelper.join(ps.dirname(gradlePropertyPath), 'local.properties'), content);
+            fs.writeFileSync(cchelper.join(ps.dirname(gradlePropertyPath), 'local.properties'), content, { encoding: 'utf8' });
         } else {
             console.log(`warning: ${gradlePropertyPath} not found!`);
         }
@@ -260,6 +264,21 @@ export class AndroidPackTool extends NativePackTool {
         fs.writeFileSync(manifestPath, manifest, 'utf8');
     }
 
+    private async generateAppNameValues() {
+        const valuesPath = cchelper.join(this.paths.platformTemplateDirInPrj, 'res/values/strings.xml');
+        const matchCnt = fs.readFileSync(valuesPath, 'utf8').toString().split('\n').map(x => x.trim()).filter(x => /name=\"app_name\"/.test(x)).length;
+        if (matchCnt == 0) { // should generate
+            const content = [
+                `<resources>`,
+                `    <string name="app_name" translatable="false">${this.params.projectName}</string>`,
+                `</resources>`,
+            ];
+            const dir = ps.join(this.paths.buildDir, 'proj/res/values');
+            await fs.ensureDir(dir);
+            await fs.writeFileSync(ps.join(dir, `strings.xml`), content.join('\n'), 'utf8');
+        }
+    }
+
     /**
      * 到对应目录拷贝文件到工程发布目录
      */
@@ -269,8 +288,8 @@ export class AndroidPackTool extends NativePackTool {
         const suffix = this.params.debug ? 'debug' : 'release';
         const destDir: string = ps.join(this.paths.buildDir, 'publish', suffix);
         fs.ensureDirSync(destDir);
-        let apkName = `${this.params.projectName}-${suffix}.apk`;
-        let apkPath = ps.join(this.paths.nativePrjDir, `build/${this.params.projectName}/outputs/apk/${suffix}/${apkName}`);
+        let apkName = `${this.projectNameASCII()}-${suffix}.apk`;
+        let apkPath = ps.join(this.outputsDir(), `apk/${suffix}/${apkName}`);
         if (!fs.existsSync(apkPath)) {
             throw new Error(`apk not found at ${apkPath}`);
         }
@@ -286,7 +305,7 @@ export class AndroidPackTool extends NativePackTool {
 
         if (options.appBundle) {
             apkName = `${this.params.projectName}-${suffix}.aab`;
-            apkPath = ps.join(this.paths.nativePrjDir, `build/${this.params.projectName}/outputs/bundle/${suffix}/${apkName}`);
+            apkPath = ps.join(this.outputsDir(), `bundle/${suffix}/${apkName}`);
             if (!fs.existsSync(apkPath)) {
                 throw new Error(`instant apk not found at ${apkPath}`);
             }
@@ -312,10 +331,15 @@ export class AndroidPackTool extends NativePackTool {
 
     getApkPath() {
         const suffix = this.params.debug ? 'debug' : 'release';
-        const apkName = `${this.params.projectName}-${suffix}.apk`;
-        return ps.join(
-            this.paths.nativePrjDir,
-            `build/${this.params.projectName}/outputs/apk/${suffix}/${apkName}`);
+        const apkName = `${this.projectNameASCII()}-${suffix}.apk`;
+        return ps.join(this.outputsDir(), `apk/${suffix}/${apkName}`);
+    }
+
+    private outputsDir() {
+        const folderName = this.projectNameASCII();
+        const targetDir = ps.join(this.paths.nativePrjDir, 'build', folderName);
+        const fallbackDir = ps.join(this.paths.nativePrjDir, 'build', this.params.projectName);
+        return ps.join(fs.existsSync(targetDir) ? targetDir : fallbackDir, 'outputs');
     }
 
     async install(): Promise<boolean> {
@@ -330,7 +354,11 @@ export class AndroidPackTool extends NativePackTool {
             throw new Error(`can not find adb at ${adbPath}`);
         }
 
-        if (await this.checkApkInstalled()) {
+        if (!this.checkConnectedDevices(adbPath)) {
+            console.error(`can not find any connected devices, please connect you device or start an Android emulator`);
+        }
+
+        if (await this.checkApkInstalled(adbPath)) {
             await cchelper.runCmd(
                 adbPath, ['uninstall', this.params.platformParams.packageName], false);
         }
@@ -339,9 +367,33 @@ export class AndroidPackTool extends NativePackTool {
         return true;
     }
 
-    async checkApkInstalled() {
+    checkConnectedDevices(adbPath: string): boolean {
+        const cp = spawnSync(adbPath, ['devices'], { shell: true, env: process.env, cwd: process.cwd() });
+        if (cp.stderr && cp.stderr.length > 0) {
+            console.log(`[adb devices] stderr: ${cp.stderr.toString('utf8')}`);
+        }
+        if (cp.error) {
+            console.log(`[adb devices] error: ${cp.error}`);
+        }
+        if (cp.output.length > 1) {
+            for (const chunk of cp.output) {
+                if (chunk) {
+                    const chunkAny: any = chunk;
+                    const chuckStr: string = typeof chunk === 'string' ? chunk : (chunkAny.buffer && chunkAny.buffer instanceof ArrayBuffer ? chunkAny.toString() : chunkAny.toString());
+                    const lines = chuckStr.split('\n');
+                    for (let line of lines) {
+                        if (/^[0-9a-zA-Z]+\s+\w+/.test(line)) {
+                            return true; // device connected
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    async checkApkInstalled(adbPath: string) {
         const ret: string = await new Promise((resolve, reject) => {
-            const adbPath = this.getAdbPath();
             const cp = spawn(
                 adbPath,
                 [

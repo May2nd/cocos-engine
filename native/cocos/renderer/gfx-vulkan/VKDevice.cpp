@@ -31,6 +31,7 @@
 #include "VKFramebuffer.h"
 #include "VKGPUObjects.h"
 #include "VKInputAssembler.h"
+#include "VKPipelineCache.h"
 #include "VKPipelineLayout.h"
 #include "VKPipelineState.h"
 #include "VKQueryPool.h"
@@ -39,7 +40,6 @@
 #include "VKShader.h"
 #include "VKSwapchain.h"
 #include "VKTexture.h"
-#include "VKPipelineCache.h"
 #include "VKUtils.h"
 #include "base/Utils.h"
 #include "gfx-base/GFXDef-common.h"
@@ -61,7 +61,8 @@ CC_DISABLE_WARNINGS()
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 #define THSVS_ERROR_CHECK_MIXED_IMAGE_LAYOUT
-#define THSVS_ERROR_CHECK_POTENTIAL_HAZARD
+// remote potential hazard because of programmable blend
+//#define THSVS_ERROR_CHECK_POTENTIAL_HAZARD
 #define THSVS_SIMPLER_VULKAN_SYNCHRONIZATION_IMPLEMENTATION
 #include "thsvs_simpler_vulkan_synchronization.h"
 CC_ENABLE_WARNINGS()
@@ -272,13 +273,7 @@ bool CCVKDevice::doInit(const DeviceInfo & /*info*/) {
     };
     findPreferredDepthFormat(depthStencilFormatPriorityList, 3, &_gpuDevice->depthStencilFormat);
 
-    _features[toNumber(Feature::ELEMENT_INDEX_UINT)] = true;
-    _features[toNumber(Feature::INSTANCED_ARRAYS)] = true;
-    _features[toNumber(Feature::MULTIPLE_RENDER_TARGETS)] = true;
-    _features[toNumber(Feature::BLEND_MINMAX)] = true;
-    _features[toNumber(Feature::COMPUTE_SHADER)] = true;
-    _features[toNumber(Feature::INPUT_ATTACHMENT_BENEFIT)] = true;
-
+    initDeviceFeature();
     initFormatFeature();
 
     ccstd::string compressedFmts;
@@ -320,6 +315,7 @@ bool CCVKDevice::doInit(const DeviceInfo & /*info*/) {
     _caps.maxShaderStorageBufferBindings = limits.maxDescriptorSetStorageBuffers;
     _caps.maxTextureUnits = limits.maxDescriptorSetSampledImages;
     _caps.maxVertexTextureUnits = limits.maxPerStageDescriptorSampledImages;
+    _caps.maxColorRenderTargets = limits.maxColorAttachments;
     _caps.maxTextureSize = limits.maxImageDimension2D;
     _caps.maxCubeMapTextureSize = limits.maxImageDimensionCube;
     _caps.maxArrayTextureLayers = limits.maxImageArrayLayers;
@@ -762,6 +758,18 @@ void CCVKDevice::updateBackBufferCount(uint32_t backBufferCount) {
     _gpuDevice->backBufferCount = backBufferCount;
 }
 
+void CCVKDevice::initDeviceFeature() {
+    _features[toNumber(Feature::ELEMENT_INDEX_UINT)] = true;
+    _features[toNumber(Feature::INSTANCED_ARRAYS)] = true;
+    _features[toNumber(Feature::MULTIPLE_RENDER_TARGETS)] = true;
+    _features[toNumber(Feature::BLEND_MINMAX)] = true;
+    _features[toNumber(Feature::COMPUTE_SHADER)] = true;
+    _features[toNumber(Feature::INPUT_ATTACHMENT_BENEFIT)] = true;
+    _features[toNumber(Feature::SUBPASS_COLOR_INPUT)] = true;
+    _features[toNumber(Feature::SUBPASS_DEPTH_STENCIL_INPUT)] = true;
+    _features[toNumber(Feature::RASTERIZATION_ORDER_NOCOHERENT)] = true;
+}
+
 void CCVKDevice::initFormatFeature() {
     const auto formatLen = static_cast<size_t>(Format::COUNT);
     VkFormatProperties properties = {};
@@ -805,8 +813,7 @@ void CCVKDevice::initFormatFeature() {
     }
 }
 
-void CCVKDevice::initExtensionCapability()
-{
+void CCVKDevice::initExtensionCapability() {
     _caps.supportVariableRateShading = checkExtension(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
     _caps.supportVariableRateShading &= _gpuContext->physicalDeviceFragmentShadingRateFeatures.pipelineFragmentShadingRate &&
                                         _gpuContext->physicalDeviceFragmentShadingRateFeatures.attachmentFragmentShadingRate;
@@ -941,7 +948,7 @@ void CCVKDevice::getQueryPoolResults(QueryPool *queryPool) {
     uint32_t width = bWait ? 1U : 2U;
     uint64_t stride = sizeof(uint64_t) * width;
     VkQueryResultFlagBits flag = bWait ? VK_QUERY_RESULT_WAIT_BIT : VK_QUERY_RESULT_WITH_AVAILABILITY_BIT;
-    ccstd::vector<uint64_t> results(queryCount * width, 0ULL);
+    ccstd::vector<uint64_t> results(queryCount * width, 0);
 
     if (queryCount > 0U) {
         VkResult result = vkGetQueryPoolResults(

@@ -27,8 +27,8 @@
 #include "base/Ptr.h"
 #include "base/std/any.h"
 #include "bindings/utils/BindingUtils.h"
-//#include "core/components/Component.h"
-//#include "core/event/Event.h"
+// #include "core/components/Component.h"
+// #include "core/event/Event.h"
 #include "core/data/Object.h"
 #include "core/event/EventTarget.h"
 #include "core/scene-graph/Layers.h"
@@ -74,14 +74,13 @@ class Node : public CCObject {
     TARGET_EVENT_ARG1(ChildAdded, Node *)
     TARGET_EVENT_ARG1(ChildRemoved, Node *)
     TARGET_EVENT_ARG1(ParentChanged, Node *)
-    TARGET_EVENT_ARG0(NodeDestroyed)
     TARGET_EVENT_ARG0(MobilityChanged)
     TARGET_EVENT_ARG1(LayerChanged, uint32_t)
     TARGET_EVENT_ARG0(SiblingOrderChanged)
+    TARGET_EVENT_ARG1(SiblingIndexChanged, index_t)
     TARGET_EVENT_ARG0(ActiveInHierarchyChanged)
     TARGET_EVENT_ARG0(Reattach)
     TARGET_EVENT_ARG0(RemovePersistRootNode)
-    TARGET_EVENT_ARG0(DestroyComponents)
     TARGET_EVENT_ARG0(UITransformDirty)
     TARGET_EVENT_ARG1(ActiveNode, bool)
     TARGET_EVENT_ARG1(BatchCreated, bool)
@@ -138,6 +137,7 @@ public:
     virtual void onPostActivated(bool active) {}
 
     void setParent(Node *parent, bool isKeepWorld = false);
+    inline void modifyParent(Node *parent) { _parent = parent; }
 
     inline Scene *getScene() const { return _scene; };
 
@@ -470,6 +470,13 @@ public:
         _hasChangedFlagsVersion = globalFlagChangeVersion;
         _hasChangedFlags = value;
     }
+    /**
+     * @zh 节点的变换改动版本号。
+     * @en The transformation change version number of the node.
+     */
+    inline uint32_t getFlagChangedVersion() const {
+        return _hasChangedFlagsVersion;
+    }
 
     inline bool isTransformDirty() const { return _transformFlags != static_cast<uint32_t>(TransformBit::NONE); }
     inline void setLayer(uint32_t layer) {
@@ -580,7 +587,6 @@ public:
     bool onPreDestroy() override;
     bool onPreDestroyBase();
 
-    std::function<void(index_t)> onSiblingIndexChanged{nullptr};
     // For deserialization
     ccstd::string _id;
     Node *_parent{nullptr};
@@ -639,10 +645,11 @@ private:
     Vec3 _localPosition{Vec3::ZERO};
     Vec3 _localScale{Vec3::ONE};
     Quaternion _localRotation{Quaternion::identity()};
+    Vec3 _euler{0, 0, 0};
+
     // world transform
     Vec3 _worldPosition{Vec3::ZERO};
     Vec3 _worldScale{Vec3::ONE};
-    Vec3 _euler{0, 0, 0};
     Quaternion _worldRotation{Quaternion::identity()};
     Mat4 _worldMatrix{Mat4::IDENTITY};
 

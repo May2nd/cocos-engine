@@ -75,6 +75,7 @@ export class SpotLight extends Light {
      */
     @tooltip('i18n:lights.luminous_flux')
     @displayOrder(-1)
+    @range([0, Number.POSITIVE_INFINITY, 100])
     get luminousFlux () {
         const isHDR = (cclegacy.director.root as Root).pipeline.pipelineSceneData.isHDR;
         if (isHDR) {
@@ -103,6 +104,7 @@ export class SpotLight extends Light {
       */
     @tooltip('i18n:lights.luminance')
     @displayOrder(-1)
+    @range([0, Number.POSITIVE_INFINITY, 10])
     get luminance () {
         const isHDR = (cclegacy.director.root as Root).pipeline.pipelineSceneData.isHDR;
         if (isHDR) {
@@ -145,6 +147,10 @@ export class SpotLight extends Light {
      * 光源大小。
      */
     @tooltip('i18n:lights.size')
+    @editable
+    @slide
+    @range([0.0, 10.0, 0.001])
+    @type(CCFloat)
     get size () {
         return this._size;
     }

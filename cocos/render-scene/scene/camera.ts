@@ -29,6 +29,7 @@ import { Node } from '../../scene-graph';
 import { RenderScene } from '../core/render-scene';
 import { RenderWindow } from '../core/render-window';
 import { GeometryRenderer } from '../../rendering/geometry-renderer';
+import { PostProcess } from '../../rendering/post-process/components/post-process';
 
 /**
  * @en The enumeration type for the fixed axis of the camera.
@@ -805,6 +806,10 @@ export class Camera {
      */
     public screenScale: number;
 
+    public postProcess: PostProcess | null = null;
+    public usePostProcess = false;
+    public pipeline = '';
+
     private _device: Device;
     private _scene: RenderScene | null = null;
     private _node: Node | null = null;
@@ -1339,6 +1344,10 @@ export class Camera {
         this._matProj.m06 = m3.y;
         this._matProj.m10 = m3.z;
         this._matProj.m14 = m3.w;
+    }
+
+    public getClipSpaceMinz () {
+        return this._device.capabilities.clipSpaceMinZ;
     }
 
     /**

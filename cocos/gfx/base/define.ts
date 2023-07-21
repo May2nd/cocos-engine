@@ -126,6 +126,9 @@ export enum Feature {
     // the max number of attachment limit(4) situation for many devices, and shader
     // sources inside this kind of subpass must match this behavior.
     INPUT_ATTACHMENT_BENEFIT,
+    SUBPASS_COLOR_INPUT,
+    SUBPASS_DEPTH_STENCIL_INPUT,
+    RASTERIZATION_ORDER_COHERENT,
     COUNT,
 }
 
@@ -988,6 +991,14 @@ export class Color {
         this.w = info.w;
         return this;
     }
+
+    public set (x: number, y: number, z: number, w: number) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.w = w;
+        return this;
+    }
 }
 
 export class BindingMappingInfo {
@@ -1506,7 +1517,6 @@ export class ColorAttachment {
         public loadOp: LoadOp = LoadOp.CLEAR,
         public storeOp: StoreOp = StoreOp.STORE,
         public barrier: GeneralBarrier = null!,
-        public isGeneralLayout: boolean = false,
     ) {}
 
     public copy (info: Readonly<ColorAttachment>) {
@@ -1515,7 +1525,6 @@ export class ColorAttachment {
         this.loadOp = info.loadOp;
         this.storeOp = info.storeOp;
         this.barrier = info.barrier;
-        this.isGeneralLayout = info.isGeneralLayout;
         return this;
     }
 }
@@ -1531,7 +1540,6 @@ export class DepthStencilAttachment {
         public stencilLoadOp: LoadOp = LoadOp.CLEAR,
         public stencilStoreOp: StoreOp = StoreOp.STORE,
         public barrier: GeneralBarrier = null!,
-        public isGeneralLayout: boolean = false,
     ) {}
 
     public copy (info: Readonly<DepthStencilAttachment>) {
@@ -1542,7 +1550,6 @@ export class DepthStencilAttachment {
         this.stencilLoadOp = info.stencilLoadOp;
         this.stencilStoreOp = info.stencilStoreOp;
         this.barrier = info.barrier;
-        this.isGeneralLayout = info.isGeneralLayout;
         return this;
     }
 }
@@ -1581,24 +1588,16 @@ export class SubpassDependency {
         public srcSubpass: number = 0,
         public dstSubpass: number = 0,
         public generalBarrier: GeneralBarrier = null!,
-        public bufferBarriers: BufferBarrier = null!,
-        public buffers: Buffer = null!,
-        public bufferBarrierCount: number = 0,
-        public textureBarriers: TextureBarrier = null!,
-        public textures: Texture = null!,
-        public textureBarrierCount: number = 0,
+        public prevAccesses: AccessFlags[] = [AccessFlagBit.NONE],
+        public nextAccesses: AccessFlags[] = [AccessFlagBit.NONE],
     ) {}
 
     public copy (info: Readonly<SubpassDependency>) {
         this.srcSubpass = info.srcSubpass;
         this.dstSubpass = info.dstSubpass;
         this.generalBarrier = info.generalBarrier;
-        this.bufferBarriers = info.bufferBarriers;
-        this.buffers = info.buffers;
-        this.bufferBarrierCount = info.bufferBarrierCount;
-        this.textureBarriers = info.textureBarriers;
-        this.textures = info.textures;
-        this.textureBarrierCount = info.textureBarrierCount;
+        this.prevAccesses = info.prevAccesses.slice();
+        this.nextAccesses = info.nextAccesses.slice();
         return this;
     }
 }

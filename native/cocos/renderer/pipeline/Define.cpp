@@ -202,6 +202,8 @@ const gfx::UniformBlock UBOLocal::LAYOUT = {
         {"cc_localShadowBias", gfx::Type::FLOAT4, 1},
         {"cc_reflectionProbeData1", gfx::Type::FLOAT4, 1},
         {"cc_reflectionProbeData2", gfx::Type::FLOAT4, 1},
+        {"cc_reflectionProbeBlendData1", gfx::Type::FLOAT4, 1},
+        {"cc_reflectionProbeBlendData1", gfx::Type::FLOAT4, 1},
     },
     1,
 };
@@ -242,6 +244,7 @@ const gfx::UniformBlock UBOForwardLight::LAYOUT = {
         {"cc_lightColor", gfx::Type::FLOAT4, static_cast<uint32_t>(UBOForwardLight::LIGHTS_PER_PASS)},
         {"cc_lightSizeRangeAngle", gfx::Type::FLOAT4, static_cast<uint32_t>(UBOForwardLight::LIGHTS_PER_PASS)},
         {"cc_lightDir", gfx::Type::FLOAT4, static_cast<uint32_t>(UBOForwardLight::LIGHTS_PER_PASS)},
+        {"cc_lightBoundingSizeVS", gfx::Type::FLOAT4, static_cast<uint32_t>(UBOForwardLight::LIGHTS_PER_PASS)},
     },
     1,
 };
@@ -626,6 +629,21 @@ const gfx::UniformSamplerTexture REFLECTIONPROBEDATAMAP::LAYOUT = {
     1,
 };
 
+const ccstd::string REFLECTIONPROBEBLENDCUBEMAP::NAME = "cc_reflectionProbeBlendCubemap";
+const gfx::DescriptorSetLayoutBinding REFLECTIONPROBEBLENDCUBEMAP::DESCRIPTOR = {
+    REFLECTIONPROBEBLENDCUBEMAP::BINDING,
+    gfx::DescriptorType::SAMPLER_TEXTURE,
+    1,
+    gfx::ShaderStageFlagBit::FRAGMENT,
+    {},
+};
+const gfx::UniformSamplerTexture REFLECTIONPROBEBLENDCUBEMAP::LAYOUT = {
+    localSet,
+    REFLECTIONPROBEBLENDCUBEMAP::BINDING,
+    REFLECTIONPROBEBLENDCUBEMAP::NAME,
+    gfx::Type::SAMPLER_CUBE,
+    1,
+};
 
 uint32_t skyboxFlag = static_cast<uint32_t>(gfx::ClearFlagBit::STENCIL) << 1;
 
@@ -643,9 +661,15 @@ uint32_t nextPow2(uint32_t val) {
 bool supportsR16HalfFloatTexture(const gfx::Device* device) {
     return hasAllFlags(device->getFormatFeatures(gfx::Format::R16F), gfx::FormatFeature::RENDER_TARGET | gfx::FormatFeature::SAMPLED_TEXTURE);
 }
+bool supportsRGBA16HalfFloatTexture(const gfx::Device* device) {
+    return hasAllFlags(device->getFormatFeatures(gfx::Format::RGBA16F), gfx::FormatFeature::RENDER_TARGET | gfx::FormatFeature::SAMPLED_TEXTURE);
+}
 
 bool supportsR32FloatTexture(const gfx::Device* device) {
     return hasAllFlags(device->getFormatFeatures(gfx::Format::R32F), gfx::FormatFeature::RENDER_TARGET | gfx::FormatFeature::SAMPLED_TEXTURE);
+}
+bool supportsRGBA32FloatTexture(const gfx::Device* device) {
+    return hasAllFlags(device->getFormatFeatures(gfx::Format::RGBA32F), gfx::FormatFeature::RENDER_TARGET | gfx::FormatFeature::SAMPLED_TEXTURE);
 }
 
 static ccstd::unordered_map<ccstd::string, uint32_t> phases; //cjh how to clear this global variable when exiting game?

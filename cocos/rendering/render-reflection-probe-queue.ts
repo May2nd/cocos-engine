@@ -33,7 +33,6 @@ import { Camera, ProbeType, ReflectionProbe, SKYBOX_FLAG } from '../render-scene
 import { PipelineRuntime } from './custom/pipeline';
 import { IMacroPatch, RenderScene } from '../render-scene';
 import { RenderInstancedQueue } from './render-instanced-queue';
-import { RenderBatchedQueue } from './render-batched-queue';
 import { cclegacy, geometry } from '../core';
 import { Layers } from '../scene-graph/layers';
 
@@ -80,12 +79,11 @@ export class RenderReflectionProbeQueue {
     private _shaderArray: Shader[] = [];
     private _rgbeSubModelsArray: SubModel[]=[]
     private _instancedQueue: RenderInstancedQueue;
-    private _batchedQueue: RenderBatchedQueue;
+    private _patches: IMacroPatch[] = [];
 
     public constructor (pipeline: PipelineRuntime) {
         this._pipeline = pipeline;
         this._instancedQueue = new RenderInstancedQueue();
-        this._batchedQueue = new RenderBatchedQueue();
     }
     public gatherRenderObjects (probe: ReflectionProbe, camera: Camera, cmdBuff: CommandBuffer) {
         this.clear();
@@ -121,7 +119,6 @@ export class RenderReflectionProbeQueue {
             }
         }
         this._instancedQueue.uploadBuffers(cmdBuff);
-        this._batchedQueue.uploadBuffers(cmdBuff);
     }
 
     public clear () {
@@ -129,7 +126,6 @@ export class RenderReflectionProbeQueue {
         this._shaderArray.length = 0;
         this._passArray.length = 0;
         this._instancedQueue.clear();
-        this._batchedQueue.clear();
         this._rgbeSubModelsArray.length = 0;
     }
 
@@ -137,6 +133,12 @@ export class RenderReflectionProbeQueue {
         const subModels = model.subModels;
         for (let j = 0; j < subModels.length; j++) {
             const subModel = subModels[j];
+
+            //Filter transparent objects
+            const isTransparent = subModel.passes[0].blendState.targets[0].blend;
+            if (isTransparent) {
+                continue;
+            }
 
             let passIdx = getReflectMapPassIndex(subModel);
             let bUseReflectPass = true;
@@ -150,12 +152,13 @@ export class RenderReflectionProbeQueue {
             const batchingScheme = pass.batchingScheme;
 
             if (!bUseReflectPass) {
-                let patches: IMacroPatch[] | null = subModel.patches;
+                this._patches = [];
+                this._patches = this._patches.concat(subModel.patches!);
                 const useRGBEPatchs: IMacroPatch[] = [
                     { name: CC_USE_RGBE_OUTPUT, value: true },
                 ];
-                patches = patches ? patches.concat(useRGBEPatchs) : useRGBEPatchs;
-                subModel.onMacroPatchesStateChanged(patches);
+                this._patches = this._patches.concat(useRGBEPatchs);
+                subModel.onMacroPatchesStateChanged(this._patches);
                 this._rgbeSubModelsArray.push(subModel);
             }
 
@@ -163,10 +166,6 @@ export class RenderReflectionProbeQueue {
                 const buffer = pass.getInstancedBuffer();
                 buffer.merge(subModel, passIdx);
                 this._instancedQueue.queue.add(buffer);
-            } else if (pass.batchingScheme === BatchingSchemes.VB_MERGING) { // vb-merging
-                const buffer = pass.getBatchedBuffer();
-                buffer.merge(subModel, passIdx, model);
-                this._batchedQueue.queue.add(buffer);
             } else {
                 const shader = subModel.shaders[passIdx];
                 this._subModelsArray.push(subModel);
@@ -182,7 +181,6 @@ export class RenderReflectionProbeQueue {
      */
     public recordCommandBuffer (device: Device, renderPass: RenderPass, cmdBuff: CommandBuffer) {
         this._instancedQueue.recordCommandBuffer(device, renderPass, cmdBuff);
-        this._batchedQueue.recordCommandBuffer(device, renderPass, cmdBuff);
 
         for (let i = 0; i < this._subModelsArray.length; ++i) {
             const subModel = this._subModelsArray[i];
@@ -200,22 +198,22 @@ export class RenderReflectionProbeQueue {
         }
         this.resetRGBEMacro();
         this._instancedQueue.clear();
-        this._batchedQueue.clear();
     }
     public resetRGBEMacro () {
         for (let i = 0; i < this._rgbeSubModelsArray.length; i++) {
+            this._patches = [];
             const subModel = this._rgbeSubModelsArray[i];
             // eslint-disable-next-line prefer-const
-            let patches: IMacroPatch[] | null = subModel.patches;
-            if (!patches) continue;
-            for (let j = 0; j < patches.length; j++) {
-                const patch = patches[j];
+            this._patches = this._patches.concat(subModel.patches!);
+            if (!this._patches) continue;
+            for (let j = 0; j < this._patches.length; j++) {
+                const patch = this._patches[j];
                 if (patch.name === CC_USE_RGBE_OUTPUT) {
-                    patches.splice(j, 1);
+                    this._patches.splice(j, 1);
                     break;
                 }
             }
-            subModel.onMacroPatchesStateChanged(patches);
+            subModel.onMacroPatchesStateChanged(this._patches);
         }
     }
 }

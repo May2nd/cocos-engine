@@ -89,8 +89,7 @@ void Root::initialize(gfx::Swapchain * /*swapchain*/) {
     addWindowEventListener();
     // TODO(minggo):
     // return Promise.resolve(builtinResMgr.initBuiltinRes(this._device));
-    const uint32_t usedUBOVectorCount = (pipeline::UBOGlobal::COUNT + pipeline::UBOCamera::COUNT
-        + pipeline::UBOShadow::COUNT + pipeline::UBOLocal::COUNT + pipeline::UBOWorldBound::COUNT) / 4;
+    const uint32_t usedUBOVectorCount = (pipeline::UBOGlobal::COUNT + pipeline::UBOCamera::COUNT + pipeline::UBOShadow::COUNT + pipeline::UBOLocal::COUNT + pipeline::UBOWorldBound::COUNT) / 4;
     uint32_t maxJoints = (_device->getCapabilities().maxVertexUniformVectors - usedUBOVectorCount) / 3;
     maxJoints = maxJoints < 256 ? maxJoints : 256;
     pipeline::localDescriptorSetLayoutResizeMaxJoints(maxJoints);
@@ -538,6 +537,10 @@ void Root::destroyLight(scene::Light *light) { // NOLINT(readability-convert-mem
             light->getScene()->removeSphereLight(static_cast<scene::SphereLight *>(light));
         } else if (light->getType() == scene::LightType::SPOT) {
             light->getScene()->removeSpotLight(static_cast<scene::SpotLight *>(light));
+        } else if (light->getType() == scene::LightType::POINT) {
+            light->getScene()->removePointLight(static_cast<scene::PointLight *>(light));
+        } else if (light->getType() == scene::LightType::RANGED_DIRECTIONAL) {
+            light->getScene()->removeRangedDirLight(static_cast<scene::RangedDirectionalLight *>(light));
         }
     }
     light->destroy();
@@ -558,7 +561,9 @@ void Root::doXRFrameMove(int32_t totalFrames) {
     if (_xr->isRenderAllowable()) {
         bool isSceneUpdated = false;
         int viewCount = _xr->getXRConfig(xr::XRConfigKey::VIEW_COUNT).getInt();
-        bool forceUpdateSceneTwice = _xr->getXRConfig(xr::XRConfigKey::EYE_RENDER_JS_CALLBACK).getBool();
+        // compatible native pipeline
+        static bool isNativePipeline = dynamic_cast<cc::render::NativePipeline*>(_pipelineRuntime.get()) != nullptr;
+        bool forceUpdateSceneTwice = isNativePipeline ? true : _xr->getXRConfig(xr::XRConfigKey::EYE_RENDER_JS_CALLBACK).getBool();
         for (int xrEye = 0; xrEye < viewCount; xrEye++) {
             _xr->beginRenderEyeFrame(xrEye);
 

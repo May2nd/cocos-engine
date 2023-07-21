@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import { EDITOR } from 'internal:constants';
+import { EDITOR_NOT_IN_PREVIEW } from 'internal:constants';
 import { Armature, Bone, EventObject } from '@cocos/dragonbones-js';
 import { UIRenderer } from '../2d/framework/ui-renderer';
 import { CCClass, Color, Enum, ccenum, errorID, RecyclePool, js, CCObject, EventTarget, cclegacy, _decorator } from '../core';
@@ -209,7 +209,7 @@ export class ArmatureDisplay extends UIRenderer {
         this._dragonAsset = value;
         this.destroyRenderData();
         this._refresh();
-        if (EDITOR && !cclegacy.GAME_VIEW) {
+        if (EDITOR_NOT_IN_PREVIEW) {
             this._defaultArmatureIndex = 0;
             this._animationIndex = 0;
         }
@@ -244,7 +244,7 @@ export class ArmatureDisplay extends UIRenderer {
         const animNames = this.getAnimationNames(this._armatureName);
 
         if (!this.animationName || animNames.indexOf(this.animationName) < 0) {
-            if (EDITOR && !cclegacy.GAME_VIEW) {
+            if (EDITOR_NOT_IN_PREVIEW) {
                 this.animationName = animNames[0];
             } else {
                 // Not use default animation name at runtime
@@ -712,7 +712,10 @@ export class ArmatureDisplay extends UIRenderer {
         this.markForUpdateRenderData();
     }
 
-    protected updateMaterial () {
+    /**
+     * @engineInternal
+     */
+    public updateMaterial () {
         let mat;
         if (this._customMaterial) mat = this._customMaterial;
         else mat = this._updateBuiltinMaterial();
@@ -752,7 +755,7 @@ export class ArmatureDisplay extends UIRenderer {
      * @zh 初始化资产数据以及组件内部数据。
      */
     _init () {
-        if (EDITOR && !cclegacy.GAME_VIEW) {
+        if (EDITOR_NOT_IN_PREVIEW) {
             const Flags = CCObject.Flags;
             this._objFlags |= (Flags.IsAnchorLocked | Flags.IsSizeLocked);
             // this._refreshInspector();
@@ -834,7 +837,7 @@ export class ArmatureDisplay extends UIRenderer {
      *              False 代表动画使用 REALTIME 模式。
      */
     isAnimationCached () {
-        if (EDITOR && !cclegacy.GAME_VIEW) return false;
+        if (EDITOR_NOT_IN_PREVIEW) return false;
         return this._cacheMode !== AnimationCacheMode.REALTIME;
     }
     /**
@@ -895,7 +898,7 @@ export class ArmatureDisplay extends UIRenderer {
         if (!this._playing) {
             if (frameCache.isInvalid()) {
                 frameCache.updateToFrame();
-                this._curFrame = frames[frames.length - 1];
+                this._curFrame = frames[frames.length - 1]!;
                 // Update render data size if needed
                 if (this.renderData
                     && (this.renderData.vertexCount < frameCache.maxVertexCount
@@ -941,7 +944,7 @@ export class ArmatureDisplay extends UIRenderer {
             this._playCount++;
             if ((this.playTimes > 0 && this._playCount >= this.playTimes)) {
                 // set frame to end frame.
-                this._curFrame = frames[frames.length - 1];
+                this._curFrame = frames[frames.length - 1]!;
                 this._accTime = 0;
                 this._playing = false;
                 this._playCount = 0;
@@ -954,7 +957,7 @@ export class ArmatureDisplay extends UIRenderer {
             this._emitCacheCompleteEvent();
         }
 
-        this._curFrame = frames[frameIdx];
+        this._curFrame = frames[frameIdx]!;
         this.attachUtil._syncAttachedNode();
     }
     /**
@@ -965,7 +968,7 @@ export class ArmatureDisplay extends UIRenderer {
         this._materialInstances = this._materialInstances.filter((instance) => !!instance);
         this._inited = false;
 
-        if (!EDITOR || cclegacy.GAME_VIEW) {
+        if (!EDITOR_NOT_IN_PREVIEW) {
             if (this._cacheMode === AnimationCacheMode.PRIVATE_CACHE) {
                 this._armatureCache!.dispose();
                 this._armatureCache = null;
@@ -1024,7 +1027,7 @@ export class ArmatureDisplay extends UIRenderer {
         // Switch Asset or Atlas or cacheMode will rebuild armature.
         if (this._armature) {
             // dispose pre build armature
-            if (!EDITOR || cclegacy.GAME_VIEW) {
+            if (!EDITOR_NOT_IN_PREVIEW) {
                 if (this._preCacheMode === AnimationCacheMode.PRIVATE_CACHE) {
                     this._armatureCache!.dispose();
                 } else if (this._preCacheMode === AnimationCacheMode.REALTIME) {
@@ -1043,7 +1046,7 @@ export class ArmatureDisplay extends UIRenderer {
             this._preCacheMode = -1;
         }
 
-        if (!EDITOR || cclegacy.GAME_VIEW) {
+        if (!EDITOR_NOT_IN_PREVIEW) {
             if (this._cacheMode === AnimationCacheMode.SHARED_CACHE) {
                 this._armatureCache = ArmatureCache.sharedCache;
             } else if (this._cacheMode === AnimationCacheMode.PRIVATE_CACHE) {
@@ -1064,7 +1067,7 @@ export class ArmatureDisplay extends UIRenderer {
         }
 
         this._preCacheMode = this._cacheMode;
-        if (EDITOR && !cclegacy.GAME_VIEW || this._cacheMode === AnimationCacheMode.REALTIME) {
+        if (EDITOR_NOT_IN_PREVIEW || this._cacheMode === AnimationCacheMode.REALTIME) {
             this._displayProxy = this._factory!.buildArmatureDisplay(this.armatureName, this._armatureKey, '', atlasUUID) as CCArmatureDisplay;
             if (!this._displayProxy) return;
             this._displayProxy._ccNode = this.node;
@@ -1135,7 +1138,7 @@ export class ArmatureDisplay extends UIRenderer {
     _refresh () {
         this._buildArmature();
         this._indexBoneSockets();
-        if (EDITOR && !cclegacy.GAME_VIEW) {
+        if (EDITOR_NOT_IN_PREVIEW) {
             // update inspector
             this._updateArmatureEnum();
             this._updateAnimEnum();
@@ -1272,7 +1275,7 @@ export class ArmatureDisplay extends UIRenderer {
                 }
                 this._frameCache.updateToFrame(0);
                 this._playing = true;
-                this._curFrame = this._frameCache.frames[0];
+                this._curFrame = this._frameCache.frames[0]!;
             }
         } else if (this._armature) {
             return this._armature.animation.play(animName, this.playTimes);
@@ -1465,9 +1468,9 @@ export class ArmatureDisplay extends UIRenderer {
         }
         if (this._armature && this._assembler) {
             this._renderData = this._assembler.createData(this);
-            if (this.renderData) {
-                this.maxVertexCount = this.renderData.vertexCount;
-                this.maxIndexCount = this.renderData.indexCount;
+            if (this._renderData) {
+                this.maxVertexCount = this._renderData.vertexCount;
+                this.maxIndexCount = this._renderData.indexCount;
             }
             this.markForUpdateRenderData();
             this._updateColor();

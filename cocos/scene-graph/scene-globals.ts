@@ -21,8 +21,10 @@
  THE SOFTWARE.
 */
 
-import { ccclass, visible, type, displayOrder, readOnly, slide, range, rangeStep,
-    editable, serializable, rangeMin, tooltip, formerlySerializedAs, displayName } from 'cc.decorator';
+import {
+    ccclass, visible, type, displayOrder, readOnly, slide, range, rangeStep,
+    editable, serializable, rangeMin, tooltip, formerlySerializedAs, displayName,
+} from 'cc.decorator';
 import { BAIDU } from 'internal:constants';
 import { TextureCube } from '../asset/assets/texture-cube';
 import { CCFloat, CCInteger } from '../core/data/utils/attribute';
@@ -31,16 +33,18 @@ import { Ambient } from '../render-scene/scene/ambient';
 import { Shadows, ShadowType, ShadowSize } from '../render-scene/scene/shadows';
 import { Skybox, EnvironmentLightingType } from '../render-scene/scene/skybox';
 import { Octree } from '../render-scene/scene/octree';
+import { Skin } from '../render-scene/scene/skin';
 import { Fog, FogType } from '../render-scene/scene/fog';
 import { LightProbesData, LightProbes } from '../gi/light-probe/light-probe';
 import { Node } from './node';
 import { legacyCC } from '../core/global-exports';
 import { Root } from '../root';
 import { warnID } from '../core/platform/debug';
-import { Material } from '../asset/assets/material';
-import { cclegacy } from '../core';
+import { Material, MaterialPropertyFull } from '../asset/assets/material';
+import { cclegacy, macro } from '../core';
 import { Scene } from './scene';
 import { NodeEventType } from './node-event';
+import { property } from '../core/data/class-decorator';
 
 const _up = new Vec3(0, 1, 0);
 const _v3 = new Vec3();
@@ -161,6 +165,7 @@ export class AmbientInfo {
     @editable
     @type(CCFloat)
     @tooltip('i18n:ambient.skyIllum')
+    @range([0, Number.POSITIVE_INFINITY, 100])
     set skyIllum (val: number) {
         if ((legacyCC.director.root as Root).pipeline.pipelineSceneData.isHDR) {
             this._skyIllumHDR = val;
@@ -586,6 +591,27 @@ export class SkyboxInfo {
             this._resource.envmap = val;
         }
     }
+
+    /**
+     * @en
+     * Set custom skybox material properties.
+     * @zh
+     * 设置自定义的天空盒材质属性。
+     * @param name @en The target property name. @zh 目标 property 名称。
+     * @param val @en The target value. @zh 需要设置的目标值。
+     * @param passIdx
+     * @en The pass to apply to. Will apply to all passes if not specified.
+     * @zh 设置此属性的 pass 索引，如果没有指定，则会设置此属性到所有 pass 上。
+     */
+    public setMaterialProperty (name: string, val: MaterialPropertyFull | MaterialPropertyFull[], passIdx?: number) {
+        if (!this._resource) return;
+        if (this._resource.enabled && this._resource.editableMaterial) {
+            this._resource.editableMaterial.setProperty(name, val, passIdx);
+            this._resource.editableMaterial.passes.forEach((pass) => {
+                pass.update();
+            });
+        }
+    }
 }
 legacyCC.SkyboxInfo = SkyboxInfo;
 
@@ -647,7 +673,7 @@ export class FogInfo {
      */
     @editable
     @tooltip('i18n:fog.fogColor')
-    set fogColor (val: Color) {
+    set fogColor (val: Readonly<Color>) {
         this._fogColor.set(val);
         if (this._resource) { this._resource.fogColor = this._fogColor; }
     }
@@ -865,7 +891,7 @@ export class ShadowsInfo {
      */
     @tooltip('i18n:shadow.shadowColor')
     @visible(function (this: ShadowsInfo) { return this._type === ShadowType.Planar; })
-    set shadowColor (val: Color) {
+    set shadowColor (val: Readonly<Color>) {
         this._shadowColor.set(val);
         if (this._resource) { this._resource.shadowColor = val; }
     }
@@ -879,7 +905,7 @@ export class ShadowsInfo {
      */
     @tooltip('i18n:shadow.planeDirection')
     @visible(function (this: ShadowsInfo) { return this._type === ShadowType.Planar; })
-    set planeDirection (val: Vec3) {
+    set planeDirection (val: Readonly<Vec3>) {
         Vec3.copy(this._normal, val);
         if (this._resource) { this._resource.normal = val; }
     }
@@ -1077,6 +1103,86 @@ export class OctreeInfo {
 }
 legacyCC.OctreeInfo = OctreeInfo;
 
+/**
+ * @en Global skin in the render scene.
+ * @zh 渲染场景中的全局皮肤后处理设置。
+ */
+@ccclass('cc.SkinInfo')
+export class SkinInfo {
+    /**
+     * @en Enable skip.
+     * @zh 是否开启皮肤后效。
+     */
+    @editable
+    @readOnly
+    @tooltip('i18n:skin.enabled')
+    set enabled (val: boolean) {
+        if (this._enabled === val) return;
+        this._enabled = val;
+        if (this._resource) {
+            this._resource.enabled = val;
+        }
+    }
+    get enabled () {
+        return this._enabled;
+    }
+
+    /**
+     * @en Getter/Setter sampler width.
+     * @zh 设置或者获取采样宽度。
+     */
+    @visible(false)
+    @editable
+    @range([0.0, 0.1, 0.001])
+    @slide
+    @type(CCFloat)
+    @tooltip('i18n:skin.blurRadius')
+    set blurRadius (val: number) {
+        this._blurRadius = val;
+        if (this._resource) { this._resource.blurRadius = val; }
+    }
+    get blurRadius () {
+        return this._blurRadius;
+    }
+
+    /**
+     * @en Getter/Setter depth unit scale.
+     * @zh 设置或者获取深度单位比例。
+     */
+    @editable
+    @range([0.0, 10.0, 0.1])
+    @slide
+    @type(CCFloat)
+    @tooltip('i18n:skin.sssIntensity')
+    set sssIntensity (val: number) {
+        this._sssIntensity = val;
+        if (this._resource) { this._resource.sssIntensity = val; }
+    }
+    get sssIntensity () {
+        return this._sssIntensity;
+    }
+
+    @serializable
+    protected _enabled = true;
+    @serializable
+    protected _blurRadius = 0.01;
+    @serializable
+    protected _sssIntensity = 3.0;
+
+    protected _resource: Skin | null = null;
+
+    /**
+     * @en Activate the skin configuration in the render scene, no need to invoke manually.
+     * @zh 在渲染场景中启用皮肤设置，不需要手动调用
+     * @param resource The skin configuration object in the render scene
+     */
+    public activate (resource: Skin) {
+        this._resource = resource;
+        this._resource.initialize(this);
+    }
+}
+legacyCC.SkinInfo = SkinInfo;
+
 export interface ILightProbeNode {
     node: Node;
     probes: Vec3[] | null;
@@ -1233,6 +1339,25 @@ export class LightProbeInfo {
         return this._data;
     }
 
+    /**
+     * @en The value of all light probe sphere display size
+     * @zh 光照探针全局显示大小
+     */
+    @editable
+    @range([0, 100, 1])
+    @type(CCFloat)
+    @tooltip('i18n:light_probe.lightProbeSphereVolume')
+    set lightProbeSphereVolume (val: number) {
+        if (this._lightProbeSphereVolume === val) return;
+        this._lightProbeSphereVolume = val;
+        if (this._resource) {
+            this._resource.lightProbeSphereVolume = val;
+        }
+    }
+    get lightProbeSphereVolume (): number {
+        return this._lightProbeSphereVolume;
+    }
+
     @serializable
     protected _giScale = 1.0;
     @serializable
@@ -1249,6 +1374,8 @@ export class LightProbeInfo {
     protected _showConvex = false;
     @serializable
     protected _data: LightProbesData | null = null;
+    @serializable
+    protected _lightProbeSphereVolume = 1.0;
 
     protected _nodes: ILightProbeNode[] = [];
     protected _scene: Scene | null = null;
@@ -1471,6 +1598,14 @@ export class SceneGlobals {
     public octree = new OctreeInfo();
 
     /**
+     * @en Octree related configuration
+     * @zh 八叉树相关配置
+     */
+    @editable
+    @serializable
+    public skin = new SkinInfo();
+
+    /**
      * @en Light probe related configuration
      * @zh 光照探针相关配置
      */
@@ -1486,13 +1621,19 @@ export class SceneGlobals {
     @serializable
     public bakedWithStationaryMainLight = false;
 
-     /**
+    /**
      * @en bake lightmap with highp mode
      * @zh 是否使用高精度模式烘培光照图
      */
-     @editable
-     @serializable
-     public bakedWithHighpLightmap = false;
+    @editable
+    @serializable
+    public bakedWithHighpLightmap = false;
+
+    /**
+     * @en disable light map
+     * @zh 关闭光照图效果
+     */
+    public disableLightmap = false;
 
     /**
      * @en Activate and initialize the global configurations of the scene, no need to invoke manually.
@@ -1506,6 +1647,7 @@ export class SceneGlobals {
         this.shadows.activate(sceneData.shadows);
         this.fog.activate(sceneData.fog);
         this.octree.activate(sceneData.octree);
+        this.skin.activate(sceneData.skin);
         if (this.lightProbeInfo && sceneData.lightProbes) {
             this.lightProbeInfo.activate(scene, sceneData.lightProbes);
         }

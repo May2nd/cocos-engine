@@ -143,12 +143,14 @@ void SPIRVUtils::compileGLSL(ShaderStageFlagBit type, const ccstd::string &sourc
     _output.clear();
     spv::SpvBuildLogger logger;
     glslang::SpvOptions spvOptions;
+
     spvOptions.disableOptimizer = false;
     spvOptions.optimizeSize = true;
+    spvOptions.stripDebugInfo = true;
 #if CC_DEBUG > 0
     // spvOptions.validate = true;
 #else
-    spvOptions.stripDebugInfo = true;
+    //
 #endif
     glslang::GlslangToSpv(*_program->getIntermediate(stage), _output, &logger, &spvOptions);
 }

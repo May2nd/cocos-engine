@@ -205,7 +205,7 @@ export const tiled: IAssembler = {
             const y = dataList[i].y;
             const z = dataList[i].z;
             let rhw = m.m03 * x + m.m07 * y + m.m11 * z + m.m15;
-            rhw = rhw ? Math.abs(1 / rhw) : 1;
+            rhw = rhw ? 1 / rhw : 1;
 
             const offset = i * stride;
             vData[offset] = (m.m00 * x + m.m04 * y + m.m08 * z + m.m12) * rhw;
@@ -253,6 +253,7 @@ export const tiled: IAssembler = {
         }
 
         // 临时变量存前置数据
+        tempRenderData.length = 0;
         tempRenderDataLength = Math.max(row + 1, col + 1);
         for (let i = 0; i < tempRenderDataLength; i++) {
             tempRenderData.push({ x: 0, y: 0, z: 0, u: 0, v: 0, color: new Color() });

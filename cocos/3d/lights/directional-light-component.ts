@@ -25,13 +25,13 @@
 
 import { Light } from './light-component';
 import { scene } from '../../render-scene';
-import { cclegacy, clamp, warnID, CCBoolean, CCFloat, _decorator, settings, Settings, override } from '../../core';
+import { cclegacy, clamp, warnID, CCBoolean, CCFloat, _decorator, settings, Settings, CCInteger } from '../../core';
 import { Camera, PCFType, Shadows, ShadowType, CSMOptimizationMode, CSMLevel } from '../../render-scene/scene';
 import { Root } from '../../root';
-import { MeshRenderer } from '../framework';
-import { director } from '../../game/director';
+import { MeshRenderer } from '../framework/mesh-renderer';
 
-const { ccclass, menu, executeInEditMode, property, serializable, formerlySerializedAs, tooltip, help, visible, type, editable, slide, range } = _decorator;
+const { ccclass, menu, executeInEditMode, property, serializable, formerlySerializedAs, tooltip, help,
+    visible, type, editable, slide, range } = _decorator;
 
 /**
  * @en The directional light component, only one real time directional light is permitted in one scene, it act as the main light of the scene.
@@ -95,6 +95,9 @@ export class DirectionalLight extends Light {
      * @zh 光源强度。
      */
     @tooltip('i18n:lights.illuminance')
+    @editable
+    @range([0, Number.POSITIVE_INFINITY, 10])
+    @type(CCInteger)
     get illuminance () {
         const isHDR = (cclegacy.director.root as Root).pipeline.pipelineSceneData.isHDR;
         if (isHDR) {
@@ -280,7 +283,6 @@ export class DirectionalLight extends Light {
     @property({ group: { name: 'DynamicShadowSettings', displayOrder: 10 } })
     @editable
     @tooltip('CSM Level')
-    @slide
     @type(CSMLevel)
     get csmLevel () {
         return this._csmLevel;
@@ -306,7 +308,6 @@ export class DirectionalLight extends Light {
     @property({ group: { name: 'DynamicShadowSettings', displayOrder: 11 } })
     @editable
     @tooltip('enable CSM')
-    @slide
     @type(CCBoolean)
     get enableCSM () {
         return this._csmLevel > CSMLevel.LEVEL_1;
@@ -350,7 +351,6 @@ export class DirectionalLight extends Light {
     @property({ group: { name: 'DynamicShadowSettings', displayOrder: 13 } })
     @editable
     @tooltip('CSM Performance Optimization Mode')
-    @slide
     @type(CSMOptimizationMode)
     get csmOptimizationMode () {
         return this._csmOptimizationMode;
@@ -563,7 +563,7 @@ export class DirectionalLight extends Light {
         }
         super._onUpdateReceiveDirLight();
 
-        const scene = director.getScene();
+        const scene = this.node.scene;
         if (!scene || !scene.renderScene) {
             return;
         }

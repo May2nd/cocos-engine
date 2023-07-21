@@ -365,9 +365,7 @@ void Node::setSiblingIndex(index_t index) {
             siblings.emplace_back(this);
         }
         _parent->updateSiblingIndex();
-        if (onSiblingIndexChanged != nullptr) {
-            onSiblingIndexChanged(index);
-        }
+        emit<SiblingIndexChanged>(index);
     }
 }
 
@@ -491,8 +489,8 @@ void Node::updateWorldTransformRecursive(uint32_t &dirtyBits) { // NOLINT(misc-n
             }
             if (dirtyBits & static_cast<uint32_t>(TransformBit::SCALE)) {
                 _worldScale.set(_localScale);
-                Mat4::fromRTS(_worldRotation, _worldPosition, _worldScale, &_worldMatrix);
             }
+            Mat4::fromRTS(_worldRotation, _worldPosition, _worldScale, &_worldMatrix);
         }
     }
     _transformFlags = (static_cast<uint32_t>(TransformBit::NONE));

@@ -8,6 +8,7 @@ import { spawn } from "child_process";
 
 export interface IWindowsParam {
     targetPlatform: 'x64';
+    vsVersion: string;
 }
 
 export class WindowsPackTool extends NativePackTool {
@@ -37,13 +38,14 @@ export class WindowsPackTool extends NativePackTool {
 
         let generateArgs: string[] = [];
         if (!fs.existsSync(ps.join(nativePrjDir, 'CMakeCache.txt'))) {
-            const g = this.getCmakeGenerator();
+            const vsVersion = this.getCmakeGenerator();
             // const g = '';
-            if (g) {
-                const optlist = cocosConfig.cmake.windows.generators.filter((x) => x.G.toLowerCase() === g.toLowerCase());
-                if (optlist.length === 0) {
-                    generateArgs.push(`-G"${g}"`);
-                } else {
+            if (vsVersion) {
+                const optlist = cocosConfig.cmake.windows.generators.filter((x) => x.V === vsVersion);
+                if (optlist.length > 0) {
+                    generateArgs.push(`-G"${optlist[0].G}"`);
+                }
+                if (Number.parseInt(vsVersion) <= 2017) {
                     generateArgs.push('-A', this.params.platformParams.targetPlatform);
                 }
             } else {
@@ -129,18 +131,32 @@ export class WindowsPackTool extends NativePackTool {
         return ret;
     }
 
-    // TODO visual studio version
     getCmakeGenerator() {
-        return '';
+        return this.params.platformParams.vsVersion || '';
     }
 
     async run(): Promise<boolean> {
         const executableDir = ps.join(this.paths.nativePrjDir, this.params.debug ? 'Debug' : 'Release')
-        const executableName = `${this.params.projectName}.exe`;
-        if (!fs.existsSync(ps.join(executableDir, executableName))) {
-            throw new Error(`[windows run] '${executableName}' is not found within ' + ${executableDir}!`);
+        let executableFile: string;
+        let targetFile: string;
+        if (this.params.executableName) {
+            executableFile = ps.join(executableDir, this.params.executableName + '.exe');
+            targetFile = this.params.executableName;
+        } else {
+            if (/^[0-9a-zA-Z_-]+$/.test(this.params.projectName)) {
+                executableFile = ps.join(executableDir, this.params.projectName + '.exe');
+                targetFile = this.params.projectName;
+            } else {
+                const executableFiles = ['CocosGame', this.params.projectName].map(x => ps.join(executableDir, x + '.exe')).filter(x => fs.existsSync(x));
+                executableFile = executableFiles[0];
+                targetFile = 'CocosGame';
+            }
         }
-        await cchelper.runCmd(executableName, [], false, executableDir);
+
+        if (!executableFile || !fs.existsSync(executableFile)) {
+            throw new Error(`[windows run] '${targetFile}' is not found within ' + ${executableDir}!`);
+        }
+        await cchelper.runCmd(ps.basename(executableFile), [], false, executableDir);
         return true;
     }
 }

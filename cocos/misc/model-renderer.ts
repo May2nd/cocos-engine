@@ -23,11 +23,30 @@
 */
 
 import {
-    ccclass, serializable,
+    ccclass, serializable, tooltip, type, disallowAnimation,
 } from 'cc.decorator';
 import { scene } from '../render-scene';
 import { Layers } from '../scene-graph/layers';
 import { Renderer } from './renderer';
+import { CCBoolean, cclegacy, _decorator } from '../core';
+import { Model, SubModel } from '../render-scene/scene';
+import { isEnableEffect } from '../rendering/define';
+import { Root } from '../root';
+import { getPhaseID } from '../rendering/pass-phase';
+
+let _phaseID = getPhaseID('specular-pass');
+function getSkinPassIndex (subModel: SubModel): number {
+    const passes = subModel.passes;
+    const r = cclegacy.rendering;
+    if (isEnableEffect()) _phaseID = r.getPhaseID(r.getPassID('specular-pass'), 'default');
+    for (let k = 0; k < passes.length; k++) {
+        if (((!r || !r.enableEffectImport) && passes[k].phase === _phaseID)
+        || (isEnableEffect() && passes[k].phaseID === _phaseID)) {
+            return k;
+        }
+    }
+    return -1;
+}
 
 /**
  * @en Base class for all rendering components containing model.
@@ -83,7 +102,10 @@ export class ModelRenderer extends Renderer {
     protected _attachToScene () {
     }
 
-    protected _detachFromScene () {
+    /**
+     * @engineInternal
+     */
+    public _detachFromScene () {
     }
 
     protected _onVisibilityChange (val) {

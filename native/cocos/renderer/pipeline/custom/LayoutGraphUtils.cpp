@@ -285,6 +285,7 @@ const ccstd::unordered_map<ccstd::string, uint32_t> DEFAULT_UNIFORM_COUNTS{
     {"cc_lightColor", pipeline::UBOForwardLight::LIGHTS_PER_PASS},
     {"cc_lightSizeRangeAngle", pipeline::UBOForwardLight::LIGHTS_PER_PASS},
     {"cc_lightDir", pipeline::UBOForwardLight::LIGHTS_PER_PASS},
+    {"cc_lightBoundingSizeVS", pipeline::UBOForwardLight::LIGHTS_PER_PASS},
 };
 
 const TransparentSet<ccstd::string> DYNAMIC_UNIFORM_BLOCK{
@@ -345,12 +346,10 @@ gfx::DescriptorSet* getOrCreatePerPassDescriptorSet(
 
 void generateConstantMacros(
     gfx::Device* device,
-    ccstd::string& constantMacros,
-    bool clusterEnabled) {
+    ccstd::string& constantMacros) {
     constantMacros = StringUtil::format(
         R"(
 #define CC_DEVICE_SUPPORT_FLOAT_TEXTURE %d
-#define CC_ENABLE_CLUSTERED_LIGHT_CULLING %d
 #define CC_DEVICE_MAX_VERTEX_UNIFORM_VECTORS %d
 #define CC_DEVICE_MAX_FRAGMENT_UNIFORM_VECTORS %d
 #define CC_DEVICE_CAN_BENEFIT_FROM_INPUT_ATTACHMENT %d
@@ -360,7 +359,6 @@ void generateConstantMacros(
         )",
         hasAnyFlags(device->getFormatFeatures(gfx::Format::RGBA32F),
                     gfx::FormatFeature::RENDER_TARGET | gfx::FormatFeature::SAMPLED_TEXTURE),
-        clusterEnabled ? 1 : 0,
         device->getCapabilities().maxVertexUniformVectors,
         device->getCapabilities().maxFragmentUniformVectors,
         device->hasFeature(gfx::Feature::INPUT_ATTACHMENT_BENEFIT),

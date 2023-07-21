@@ -32,7 +32,6 @@
 #include "cocos/base/Ptr.h"
 #include "cocos/base/std/container/map.h"
 #include "cocos/base/std/container/string.h"
-#include "cocos/base/std/hash/hash.h"
 #include "cocos/renderer/gfx-base/GFXDef-common.h"
 #include "cocos/renderer/pipeline/custom/RenderCommonFwd.h"
 #include "cocos/scene/Light.h"
@@ -62,6 +61,7 @@ struct RasterPassTag {};
 struct RasterSubpassTag {};
 struct ComputeSubpassTag {};
 struct ComputeTag {};
+struct ResolveTag {};
 struct CopyTag {};
 struct MoveTag {};
 struct RaytraceTag {};
@@ -76,9 +76,12 @@ enum class ResourceResidency {
 
 enum class QueueHint {
     NONE,
-    RENDER_OPAQUE,
-    RENDER_CUTOUT,
-    RENDER_TRANSPARENT,
+    OPAQUE,
+    MASK,
+    BLEND,
+    RENDER_OPAQUE = OPAQUE,
+    RENDER_CUTOUT = MASK,
+    RENDER_TRANSPARENT = BLEND,
 };
 
 enum class ResourceDimension {
@@ -134,9 +137,12 @@ enum class TaskType {
 
 enum class SceneFlags : uint32_t {
     NONE = 0,
-    OPAQUE_OBJECT = 0x1,
-    CUTOUT_OBJECT = 0x2,
-    TRANSPARENT_OBJECT = 0x4,
+    OPAQUE = 0x1,
+    MASK = 0x2,
+    BLEND = 0x4,
+    OPAQUE_OBJECT = OPAQUE,
+    CUTOUT_OBJECT = MASK,
+    TRANSPARENT_OBJECT = BLEND,
     SHADOW_CASTER = 0x8,
     UI = 0x10,
     DEFAULT_LIGHTING = 0x20,
@@ -193,84 +199,11 @@ enum class AccessType {
     WRITE,
 };
 
-struct RasterView {
-    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
-    allocator_type get_allocator() const noexcept { // NOLINT
-        return {slotName.get_allocator().resource()};
-    }
-
-    RasterView(const allocator_type& alloc = boost::container::pmr::get_default_resource()) noexcept; // NOLINT
-    RasterView(ccstd::pmr::string slotNameIn, AccessType accessTypeIn, AttachmentType attachmentTypeIn, gfx::LoadOp loadOpIn, gfx::StoreOp storeOpIn, gfx::ClearFlagBit clearFlagsIn, gfx::Color clearColorIn, const allocator_type& alloc = boost::container::pmr::get_default_resource()) noexcept;
-    RasterView(RasterView&& rhs, const allocator_type& alloc);
-    RasterView(RasterView const& rhs, const allocator_type& alloc);
-
-    RasterView(RasterView&& rhs) noexcept = default;
-    RasterView(RasterView const& rhs) = delete;
-    RasterView& operator=(RasterView&& rhs) = default;
-    RasterView& operator=(RasterView const& rhs) = default;
-
-    ccstd::pmr::string slotName;
-    AccessType accessType{AccessType::WRITE};
-    AttachmentType attachmentType{AttachmentType::RENDER_TARGET};
-    gfx::LoadOp loadOp{gfx::LoadOp::LOAD};
-    gfx::StoreOp storeOp{gfx::StoreOp::STORE};
-    gfx::ClearFlagBit clearFlags{gfx::ClearFlagBit::ALL};
-    gfx::Color clearColor;
-    uint32_t slotID{0};
-};
-
-inline bool operator==(const RasterView& lhs, const RasterView& rhs) noexcept {
-    return std::forward_as_tuple(lhs.slotName, lhs.accessType, lhs.attachmentType, lhs.loadOp, lhs.storeOp, lhs.clearFlags) ==
-           std::forward_as_tuple(rhs.slotName, rhs.accessType, rhs.attachmentType, rhs.loadOp, rhs.storeOp, rhs.clearFlags);
-}
-
-inline bool operator!=(const RasterView& lhs, const RasterView& rhs) noexcept {
-    return !(lhs == rhs);
-}
-
 enum class ClearValueType {
+    NONE,
     FLOAT_TYPE,
     INT_TYPE,
 };
-
-struct ComputeView {
-    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
-    allocator_type get_allocator() const noexcept { // NOLINT
-        return {name.get_allocator().resource()};
-    }
-
-    ComputeView(const allocator_type& alloc = boost::container::pmr::get_default_resource()) noexcept; // NOLINT
-    ComputeView(ccstd::pmr::string nameIn, AccessType accessTypeIn, gfx::ClearFlagBit clearFlagsIn, gfx::Color clearColorIn, ClearValueType clearValueTypeIn, const allocator_type& alloc = boost::container::pmr::get_default_resource()) noexcept;
-    ComputeView(ComputeView&& rhs, const allocator_type& alloc);
-    ComputeView(ComputeView const& rhs, const allocator_type& alloc);
-
-    ComputeView(ComputeView&& rhs) noexcept = default;
-    ComputeView(ComputeView const& rhs) = delete;
-    ComputeView& operator=(ComputeView&& rhs) = default;
-    ComputeView& operator=(ComputeView const& rhs) = default;
-
-    bool isRead() const {
-        return accessType != AccessType::WRITE;
-    }
-    bool isWrite() const {
-        return accessType != AccessType::READ;
-    }
-
-    ccstd::pmr::string name;
-    AccessType accessType{AccessType::READ};
-    gfx::ClearFlagBit clearFlags{gfx::ClearFlagBit::NONE};
-    gfx::Color clearColor;
-    ClearValueType clearValueType{ClearValueType::FLOAT_TYPE};
-};
-
-inline bool operator==(const ComputeView& lhs, const ComputeView& rhs) noexcept {
-    return std::forward_as_tuple(lhs.name, lhs.accessType, lhs.clearFlags, lhs.clearValueType) ==
-           std::forward_as_tuple(rhs.name, rhs.accessType, rhs.clearFlags, rhs.clearValueType);
-}
-
-inline bool operator!=(const ComputeView& lhs, const ComputeView& rhs) noexcept {
-    return !(lhs == rhs);
-}
 
 struct LightInfo {
     LightInfo() = default;
@@ -338,6 +271,60 @@ inline bool operator<(const DescriptorBlockIndex& lhs, const DescriptorBlockInde
            std::forward_as_tuple(rhs.updateFrequency, rhs.parameterType, rhs.descriptorType, rhs.visibility);
 }
 
+enum class ResolveFlags : uint32_t {
+    NONE = 0,
+    COLOR = 1 << 0,
+    DEPTH = 1 << 1,
+    STENCIL = 1 << 2,
+};
+
+constexpr ResolveFlags operator|(const ResolveFlags lhs, const ResolveFlags rhs) noexcept {
+    return static_cast<ResolveFlags>(static_cast<uint32_t>(lhs) | static_cast<uint32_t>(rhs));
+}
+
+constexpr ResolveFlags operator&(const ResolveFlags lhs, const ResolveFlags rhs) noexcept {
+    return static_cast<ResolveFlags>(static_cast<uint32_t>(lhs) & static_cast<uint32_t>(rhs));
+}
+
+constexpr ResolveFlags& operator|=(ResolveFlags& lhs, const ResolveFlags rhs) noexcept {
+    return lhs = lhs | rhs;
+}
+
+constexpr ResolveFlags& operator&=(ResolveFlags& lhs, const ResolveFlags rhs) noexcept {
+    return lhs = lhs & rhs;
+}
+
+constexpr bool operator!(ResolveFlags e) noexcept {
+    return e == static_cast<ResolveFlags>(0);
+}
+
+constexpr bool any(ResolveFlags e) noexcept {
+    return !!e;
+}
+
+struct ResolvePair {
+    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
+    allocator_type get_allocator() const noexcept { // NOLINT
+        return {source.get_allocator().resource()};
+    }
+
+    ResolvePair(const allocator_type& alloc = boost::container::pmr::get_default_resource()) noexcept; // NOLINT
+    ResolvePair(ccstd::pmr::string sourceIn, ccstd::pmr::string targetIn, ResolveFlags resolveFlagsIn, gfx::ResolveMode modeIn, gfx::ResolveMode mode1In, const allocator_type& alloc = boost::container::pmr::get_default_resource()) noexcept;
+    ResolvePair(ResolvePair&& rhs, const allocator_type& alloc);
+    ResolvePair(ResolvePair const& rhs, const allocator_type& alloc);
+
+    ResolvePair(ResolvePair&& rhs) noexcept = default;
+    ResolvePair(ResolvePair const& rhs) = delete;
+    ResolvePair& operator=(ResolvePair&& rhs) = default;
+    ResolvePair& operator=(ResolvePair const& rhs) = default;
+
+    ccstd::pmr::string source;
+    ccstd::pmr::string target;
+    ResolveFlags resolveFlags{ResolveFlags::NONE};
+    gfx::ResolveMode mode{gfx::ResolveMode::SAMPLE_ZERO};
+    gfx::ResolveMode mode1{gfx::ResolveMode::SAMPLE_ZERO};
+};
+
 struct CopyPair {
     using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
     allocator_type get_allocator() const noexcept { // NOLINT
@@ -361,6 +348,30 @@ struct CopyPair {
     uint32_t sourceMostDetailedMip{0};
     uint32_t sourceFirstSlice{0};
     uint32_t sourcePlaneSlice{0};
+    uint32_t targetMostDetailedMip{0};
+    uint32_t targetFirstSlice{0};
+    uint32_t targetPlaneSlice{0};
+};
+
+struct UploadPair {
+    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
+    allocator_type get_allocator() const noexcept { // NOLINT
+        return {target.get_allocator().resource()};
+    }
+
+    UploadPair(const allocator_type& alloc = boost::container::pmr::get_default_resource()) noexcept; // NOLINT
+    UploadPair(ccstd::vector<uint8_t> sourceIn, ccstd::pmr::string targetIn, uint32_t mipLevelsIn, uint32_t numSlicesIn, uint32_t targetMostDetailedMipIn, uint32_t targetFirstSliceIn, uint32_t targetPlaneSliceIn, const allocator_type& alloc = boost::container::pmr::get_default_resource()) noexcept;
+    UploadPair(UploadPair&& rhs, const allocator_type& alloc);
+
+    UploadPair(UploadPair&& rhs) noexcept = default;
+    UploadPair(UploadPair const& rhs) = delete;
+    UploadPair& operator=(UploadPair&& rhs) = default;
+    UploadPair& operator=(UploadPair const& rhs) = delete;
+
+    ccstd::vector<uint8_t> source;
+    ccstd::pmr::string target;
+    uint32_t mipLevels{0xFFFFFFFF};
+    uint32_t numSlices{0xFFFFFFFF};
     uint32_t targetMostDetailedMip{0};
     uint32_t targetFirstSlice{0};
     uint32_t targetPlaneSlice{0};
@@ -408,29 +419,5 @@ struct PipelineStatistics {
 } // namespace render
 
 } // namespace cc
-
-namespace ccstd {
-
-inline hash_t hash<cc::render::RasterView>::operator()(const cc::render::RasterView& val) const noexcept {
-    hash_t seed = 0;
-    hash_combine(seed, val.slotName);
-    hash_combine(seed, val.accessType);
-    hash_combine(seed, val.attachmentType);
-    hash_combine(seed, val.loadOp);
-    hash_combine(seed, val.storeOp);
-    hash_combine(seed, val.clearFlags);
-    return seed;
-}
-
-inline hash_t hash<cc::render::ComputeView>::operator()(const cc::render::ComputeView& val) const noexcept {
-    hash_t seed = 0;
-    hash_combine(seed, val.name);
-    hash_combine(seed, val.accessType);
-    hash_combine(seed, val.clearFlags);
-    hash_combine(seed, val.clearValueType);
-    return seed;
-}
-
-} // namespace ccstd
 
 // clang-format on
